@@ -42,12 +42,8 @@ func (db *DB) createTables() error {
 		wallabag_password TEXT,
 		wallabag_client_id TEXT,
 		wallabag_client_secret TEXT,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-
-	CREATE TABLE IF NOT EXISTS articles (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		sync_interval INTEGER DEFAULT 15,
+		last_sync DATETIME DEFAULT CURRENT_TIMESTAMP,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);

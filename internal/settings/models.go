@@ -13,6 +13,8 @@ type Settings struct {
 	WallabagPassword     string    `json:"wallabag_password" db:"wallabag_password"`
 	WallabagClientID     string    `json:"wallabag_client_id" db:"wallabag_client_id"`
 	WallabagClientSecret string    `json:"wallabag_client_secret" db:"wallabag_client_secret"`
+	SyncInterval         int       `json:"sync_interval" db:"sync_interval"`
+	LastSync             time.Time `json:"last_sync" db:"last_sync"`
 	CreatedAt            time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt            time.Time `json:"updated_at" db:"updated_at"`
 }
