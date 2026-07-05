@@ -12,7 +12,7 @@ run: generate
 	go run main.go
 
 build: generate
-	go build -o buckleberry main.go
+	go build -o out/buckleberry main.go
 
 # Run the tests
 test:
