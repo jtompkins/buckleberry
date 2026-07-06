@@ -56,6 +56,8 @@ func (h *Handler) GetUnreadFeed(c fiber.Ctx) error {
 		Title: "Unread Wallabag Articles",
 	}
 
+	// TODO: move this logic into the main.go file so that it doesn't have to be repeated every time?
+	// alternative: move it into the constructor function
 	wallabago.SetConfig(wallabago.NewWallabagConfig(
 		settings.WallabagInstanceURL,
 		settings.WallabagClientID,
@@ -109,4 +111,12 @@ func (h *Handler) GetUnreadFeed(c fiber.Ctx) error {
 	}
 
 	return c.SendString(atomFeed)
+}
+
+func (h *Handler) GetDownload(c fiber.Ctx) error {
+	// TODO: Implement this method
+	// The Wallabako library includes a method call to get the bytes for the epub;
+	// we'll need to pull that down and then flow the bytes into the Fiber return
+	// somehow. I'm sure there's a way to do that in Fiber, just need to find it.
+	return nil
 }

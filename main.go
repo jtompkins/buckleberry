@@ -49,6 +49,7 @@ func main() {
 
 	app.Get("/opds", authMiddleware, opdsHandler.GetNavigationFeeds)
 	app.Get("/opds/unread", authMiddleware, opdsHandler.GetUnreadFeed)
+	app.Get("/opds/download/:id", authMiddleware, opdsHandler.GetDownload)
 
 	port := viper.GetString("PORT")
 	log.Fatal(app.Listen(":" + port))
