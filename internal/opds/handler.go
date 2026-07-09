@@ -8,6 +8,7 @@ import (
 
 	"github.com/Strubbl/wallabago/v9"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/log"
 	"github.com/gorilla/feeds"
 )
 
@@ -15,22 +16,35 @@ type Handler struct {
 	settingsRepo *settings.Repository
 }
 
-func NewHandler(settingsRepository *settings.Repository) *Handler {
+func NewHandler(settingsRepository *settings.Repository) (*Handler, error) {
+	settings, err := settingsRepository.Get()
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch settings: %s", err.Error())
+	}
+
+	wallabago.SetConfig(wallabago.NewWallabagConfig(
+		settings.WallabagInstanceURL,
+		settings.WallabagClientID,
+		settings.WallabagClientSecret,
+		settings.WallabagUsername,
+		settings.WallabagPassword),
+	)
+
 	return &Handler{
 		settingsRepo: settingsRepository,
-	}
+	}, nil
 }
 
 func (h *Handler) GetNavigationFeeds(c fiber.Ctx) error {
 	feed := &feeds.Feed{
 		Title: "Wallabag Articles",
-	}
-
-	feed.Items = []*feeds.Item{
-		{
-			Title:   "Unread articles",
-			Link:    &feeds.Link{Href: "/opds/unread", Type: "application/atom+xml;profile=opds-catalog"},
-			Content: "Unread articles from Wallabag, sorted oldest to newest",
+		Items: []*feeds.Item{
+			{
+				Title:   "Unread articles",
+				Link:    &feeds.Link{Href: "/opds/unread", Type: "application/atom+xml;profile=opds-catalog"},
+				Content: "Unread articles from Wallabag, sorted oldest to newest",
+			},
 		},
 	}
 
@@ -46,25 +60,9 @@ func (h *Handler) GetNavigationFeeds(c fiber.Ctx) error {
 }
 
 func (h *Handler) GetUnreadFeed(c fiber.Ctx) error {
-	settings, err := h.settingsRepo.Get()
-
-	if err != nil {
-		return c.Status(500).SendString(fmt.Sprintf("Failed to fetch settings: %s", err.Error()))
-	}
-
 	feed := &feeds.Feed{
 		Title: "Unread Wallabag Articles",
 	}
-
-	// TODO: move this logic into the main.go file so that it doesn't have to be repeated every time?
-	// alternative: move it into the constructor function
-	wallabago.SetConfig(wallabago.NewWallabagConfig(
-		settings.WallabagInstanceURL,
-		settings.WallabagClientID,
-		settings.WallabagClientSecret,
-		settings.WallabagUsername,
-		settings.WallabagPassword),
-	)
 
 	entries, err := wallabago.GetEntries(wallabago.APICall, 0, -1, "", "", -1, -1, "", -1, -1, "metadata", "")
 
@@ -97,7 +95,7 @@ func (h *Handler) GetUnreadFeed(c fiber.Ctx) error {
 		feedItems = append(feedItems, &feeds.Item{
 			Id:     strconv.Itoa(entry.ID),
 			Title:  entry.Title,
-			Link:   &feeds.Link{Href: entry.URL, Type: "application/epub+zip", Rel: "http://opds-spec.org/acquisition"},
+			Link:   &feeds.Link{Href: fmt.Sprintf("/opds/download/%d", entry.ID), Type: "application/epub+zip", Rel: "http://opds-spec.org/acquisition"},
 			Author: &feeds.Author{Name: author},
 		})
 	}
@@ -114,9 +112,28 @@ func (h *Handler) GetUnreadFeed(c fiber.Ctx) error {
 }
 
 func (h *Handler) GetDownload(c fiber.Ctx) error {
-	// TODO: Implement this method
-	// The Wallabako library includes a method call to get the bytes for the epub;
-	// we'll need to pull that down and then flow the bytes into the Fiber return
-	// somehow. I'm sure there's a way to do that in Fiber, just need to find it.
-	return nil
+	idParam := c.Params("id")
+
+	if idParam == "" {
+		return c.Status(400).SendString("Missing article ID")
+	}
+
+	articleId, err := strconv.Atoi(idParam)
+
+	if err != nil {
+		return c.Status(400).SendString("Invalid article ID")
+	}
+
+	log.Debug("Attempting to fetch ePUB for article with ID ", articleId)
+
+	epubBytes, err := wallabago.ExportEntry(wallabago.APICall, articleId, "epub")
+
+	if err != nil {
+		log.Debug("Error when fetching ePUB: ", err.Error())
+		return c.Status(500).SendString(err.Error())
+	}
+
+	log.Debug("Fetched article, length: ", len(epubBytes))
+
+	return c.Type("epub").Send(epubBytes)
 }

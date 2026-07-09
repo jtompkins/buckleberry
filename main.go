@@ -32,7 +32,11 @@ func main() {
 	settingsRepo := settings.NewRepository(db)
 	middleware := auth.NewMiddleware(settingsRepo)
 
-	opdsHandler := opds.NewHandler(settingsRepo)
+	opdsHandler, err := opds.NewHandler(settingsRepo)
+
+	if err != nil {
+		log.Fatal("Unable to initialize OPDS handler: ", err)
+	}
 
 	app := fiber.New()
 
