@@ -21,6 +21,7 @@ func main() {
 
 	viper.SetDefault("DB_PATH", "./buckleberry.db")
 	viper.SetDefault("PORT", "8080")
+	viper.SetDefault("BASE_URL", "localhost:8080")
 
 	dbPath := viper.GetString("DB_PATH")
 	db, err := database.New(dbPath)
@@ -32,7 +33,7 @@ func main() {
 	settingsRepo := settings.NewRepository(db)
 	middleware := auth.NewMiddleware(settingsRepo)
 
-	opdsHandler, err := opds.NewHandler(settingsRepo)
+	opdsHandler, err := opds.NewHandler(settingsRepo, viper.GetString("BASE_URL"))
 
 	if err != nil {
 		log.Fatal("Unable to initialize OPDS handler: ", err)

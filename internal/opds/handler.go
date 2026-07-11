@@ -14,9 +14,10 @@ import (
 
 type Handler struct {
 	settingsRepo *settings.Repository
+	baseUrl      string
 }
 
-func NewHandler(settingsRepository *settings.Repository) (*Handler, error) {
+func NewHandler(settingsRepository *settings.Repository, baseUrl string) (*Handler, error) {
 	settings, err := settingsRepository.Get()
 
 	if err != nil {
@@ -33,6 +34,7 @@ func NewHandler(settingsRepository *settings.Repository) (*Handler, error) {
 
 	return &Handler{
 		settingsRepo: settingsRepository,
+		baseUrl:      baseUrl,
 	}, nil
 }
 
@@ -42,7 +44,7 @@ func (h *Handler) GetNavigationFeeds(c fiber.Ctx) error {
 		Items: []*feeds.Item{
 			{
 				Title:   "Unread articles",
-				Link:    &feeds.Link{Href: "/opds/unread", Type: "application/atom+xml;profile=opds-catalog"},
+				Link:    &feeds.Link{Href: fmt.Sprintf("%s/opds/unread", h.baseUrl), Type: "application/atom+xml;profile=opds-catalog"},
 				Content: "Unread articles from Wallabag, sorted oldest to newest",
 			},
 		},
@@ -95,7 +97,7 @@ func (h *Handler) GetUnreadFeed(c fiber.Ctx) error {
 		feedItems = append(feedItems, &feeds.Item{
 			Id:     strconv.Itoa(entry.ID),
 			Title:  entry.Title,
-			Link:   &feeds.Link{Href: fmt.Sprintf("/opds/download/%d", entry.ID), Type: "application/epub+zip", Rel: "http://opds-spec.org/acquisition"},
+			Link:   &feeds.Link{Href: fmt.Sprintf("%s/opds/download/%d", h.baseUrl, entry.ID), Type: "application/epub+zip", Rel: "http://opds-spec.org/acquisition"},
 			Author: &feeds.Author{Name: author},
 		})
 	}
