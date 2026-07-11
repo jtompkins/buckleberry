@@ -8,16 +8,20 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type Middleware struct {
-	repo *settings.Repository
+type settingsReader interface {
+	Get() (*settings.Settings, error)
 }
 
-func NewMiddleware(repo *settings.Repository) *Middleware {
-	return &Middleware{repo}
+type BasicAuthorizer struct {
+	settingsRepo settingsReader
 }
 
-func (m *Middleware) GetUsers() map[string]string {
-	settings, err := m.repo.Get()
+func NewAuthorizer(repo *settings.Repository) *BasicAuthorizer {
+	return &BasicAuthorizer{repo}
+}
+
+func (m *BasicAuthorizer) GetUsers() map[string]string {
+	settings, err := m.settingsRepo.Get()
 
 	if err != nil {
 		log.Error("Couldn't fetch settings from database", err)
@@ -33,8 +37,8 @@ func (m *Middleware) GetUsers() map[string]string {
 	return map[string]string{settings.Username: string(hashedPassword)}
 }
 
-func (m *Middleware) Authorizer(user, pass string, c fiber.Ctx) bool {
-	settings, err := m.repo.Get()
+func (m *BasicAuthorizer) Authorize(user, pass string, c fiber.Ctx) bool {
+	settings, err := m.settingsRepo.Get()
 
 	if err != nil {
 		log.Error("Couldn't fetch settings from database", err)

@@ -12,30 +12,27 @@ import (
 	"github.com/gorilla/feeds"
 )
 
+type settingsReader interface {
+	Get() (*settings.Settings, error)
+}
+
+type wallabagClient interface {
+	GetEntries() (*wallabago.Entries, error)
+	ExportEntry(id int, format string) ([]byte, error)
+}
+
 type Handler struct {
-	settingsRepo *settings.Repository
+	settingsRepo settingsReader
+	client       wallabagClient
 	baseUrl      string
 }
 
-func NewHandler(settingsRepository *settings.Repository, baseUrl string) (*Handler, error) {
-	settings, err := settingsRepository.Get()
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch settings: %s", err.Error())
-	}
-
-	wallabago.SetConfig(wallabago.NewWallabagConfig(
-		settings.WallabagInstanceURL,
-		settings.WallabagClientID,
-		settings.WallabagClientSecret,
-		settings.WallabagUsername,
-		settings.WallabagPassword),
-	)
-
+func NewHandler(settingsRepository settingsReader, client wallabagClient, baseUrl string) *Handler {
 	return &Handler{
 		settingsRepo: settingsRepository,
+		client:       client,
 		baseUrl:      baseUrl,
-	}, nil
+	}
 }
 
 func (h *Handler) GetNavigationFeeds(c fiber.Ctx) error {
@@ -50,7 +47,7 @@ func (h *Handler) GetNavigationFeeds(c fiber.Ctx) error {
 		},
 	}
 
-	c.Type("application/atom+xml", "utf-8")
+	c.Type("atom", "utf-8")
 
 	atomFeed, err := feed.ToAtom()
 
@@ -66,7 +63,7 @@ func (h *Handler) GetUnreadFeed(c fiber.Ctx) error {
 		Title: "Unread Wallabag Articles",
 	}
 
-	entries, err := wallabago.GetEntries(wallabago.APICall, 0, -1, "", "", -1, -1, "", -1, -1, "metadata", "")
+	entries, err := h.client.GetEntries()
 
 	if err != nil {
 		return c.Status(500).SendString(fmt.Sprintf("Failed to fetch Wallabag articles: %s", err.Error()))
@@ -110,6 +107,8 @@ func (h *Handler) GetUnreadFeed(c fiber.Ctx) error {
 		return c.Status(500).SendString(err.Error())
 	}
 
+	c.Type("atom", "utf-8")
+
 	return c.SendString(atomFeed)
 }
 
@@ -128,7 +127,7 @@ func (h *Handler) GetDownload(c fiber.Ctx) error {
 
 	log.Debug("Attempting to fetch ePUB for article with ID ", articleId)
 
-	epubBytes, err := wallabago.ExportEntry(wallabago.APICall, articleId, "epub")
+	epubBytes, err := h.client.ExportEntry(articleId, "epub")
 
 	if err != nil {
 		log.Debug("Error when fetching ePUB: ", err.Error())
