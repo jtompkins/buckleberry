@@ -36,19 +36,25 @@ func main() {
 
 	settingsRepo := settings.NewRepository(db)
 
-	settings, err := settingsRepo.Get()
+	isOnboarded, err := settingsRepo.IsOnboarded()
 
 	if err != nil {
-		log.Fatal("getting settings: ", err.Error())
-	}
+		log.Fatal("Failed to find is onboarded: ", err)
+	} else if isOnboarded {
+		settings, err := settingsRepo.Get()
 
-	wallabago.SetConfig(wallabago.NewWallabagConfig(
-		settings.WallabagInstanceURL,
-		settings.WallabagClientID,
-		settings.WallabagClientSecret,
-		settings.WallabagUsername,
-		settings.WallabagPassword),
-	)
+		if err != nil {
+			log.Fatal("getting settings: ", err.Error())
+		}
+
+		wallabago.SetConfig(wallabago.NewWallabagConfig(
+			settings.WallabagInstanceURL,
+			settings.WallabagClientID,
+			settings.WallabagClientSecret,
+			settings.WallabagUsername,
+			settings.WallabagPassword),
+		)
+	}
 
 	authorizer := auth.NewAuthorizer(settingsRepo)
 	opdsHandler := opds.NewHandler(settingsRepo, wallabag.NewClient(), viper.GetString("BASE_URL"))
@@ -63,14 +69,20 @@ func main() {
 		Authorizer: authorizer.Authorize,
 	})
 
-	app.Get("/", func(c fiber.Ctx) error {
+	onboardingMiddleware := onboarding.NewMiddleware(settingsRepo)
+
+	app.Get("/", onboardingMiddleware.RequireOnboarded, func(c fiber.Ctx) error {
 		return c.SendString("Hello, world!")
 	})
 
 	app.Get("/onboarding", onboardingHandler.HandleOnboarding)
-	app.Get("/opds", authMiddleware, opdsHandler.GetNavigationFeeds)
-	app.Get("/opds/unread", authMiddleware, opdsHandler.GetUnreadFeed)
-	app.Get("/opds/download/:id", authMiddleware, opdsHandler.GetDownload)
+	app.Post("/onboarding", onboardingHandler.FinishOnboarding)
+
+	opds := app.Group("/opds", onboardingMiddleware.RequireOnboarded, authMiddleware)
+
+	opds.Get("/", opdsHandler.GetNavigationFeeds)
+	opds.Get("/unread", opdsHandler.GetUnreadFeed)
+	opds.Get("/download/:id", opdsHandler.GetDownload)
 
 	port := viper.GetString("PORT")
 	log.Fatal(app.Listen(":" + port))

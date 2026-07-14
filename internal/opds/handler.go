@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Strubbl/wallabago/v9"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
 	"github.com/gorilla/feeds"
 )
+
+const ACQUISISTION_TYPE string = "application/atom+xml;profile=opds-catalog;kind=acquisition"
+const NAVIGATION_TYPE string = "application/atom+xml;profile=opds-catalog;kind=navigation"
 
 type settingsReader interface {
 	Get() (*settings.Settings, error)
@@ -36,15 +40,24 @@ func NewHandler(settingsRepository settingsReader, client wallabagClient, baseUr
 }
 
 func (h *Handler) GetNavigationFeeds(c fiber.Ctx) error {
+	feedUrl := fmt.Sprintf("%s/opds", h.baseUrl)
+	unreadFeedUrl := fmt.Sprintf("%s/opds/unread", h.baseUrl)
+	updated := time.Now()
+
 	feed := &feeds.Feed{
+		Id:    feedUrl,
 		Title: "Wallabag Articles",
 		Items: []*feeds.Item{
 			{
 				Title:   "Unread articles",
-				Link:    &feeds.Link{Href: fmt.Sprintf("%s/opds/unread", h.baseUrl), Type: "application/atom+xml;profile=opds-catalog"},
+				Id:      unreadFeedUrl,
+				Updated: updated,
+				Link:    &feeds.Link{Href: unreadFeedUrl, Type: ACQUISISTION_TYPE},
 				Content: "Unread articles from Wallabag, sorted oldest to newest",
 			},
 		},
+		Updated: updated,
+		Link:    &feeds.Link{Href: feedUrl, Rel: "self", Type: NAVIGATION_TYPE},
 	}
 
 	c.Type("atom", "utf-8")
@@ -59,8 +72,13 @@ func (h *Handler) GetNavigationFeeds(c fiber.Ctx) error {
 }
 
 func (h *Handler) GetUnreadFeed(c fiber.Ctx) error {
+	feedUrl := fmt.Sprintf("%s/opds/unread", h.baseUrl)
+
 	feed := &feeds.Feed{
-		Title: "Unread Wallabag Articles",
+		Title:   "Unread Wallabag Articles",
+		Id:      feedUrl,
+		Updated: time.Now(),
+		Link:    &feeds.Link{Href: feedUrl, Rel: "self", Type: ACQUISISTION_TYPE},
 	}
 
 	entries, err := h.client.GetEntries()
@@ -91,11 +109,24 @@ func (h *Handler) GetUnreadFeed(c fiber.Ctx) error {
 			author = authorBuilder.String()
 		}
 
+		entryUrl := fmt.Sprintf("%s/opds/download/%d", h.baseUrl, entry.ID)
+
+		var entryUpdated time.Time
+
+		if entry.UpdatedAt != nil {
+			entryUpdated = entry.UpdatedAt.Time
+		} else if entry.CreatedAt != nil {
+			entryUpdated = entry.CreatedAt.Time
+		} else {
+			entryUpdated = time.Now()
+		}
+
 		feedItems = append(feedItems, &feeds.Item{
-			Id:     strconv.Itoa(entry.ID),
-			Title:  entry.Title,
-			Link:   &feeds.Link{Href: fmt.Sprintf("%s/opds/download/%d", h.baseUrl, entry.ID), Type: "application/epub+zip", Rel: "http://opds-spec.org/acquisition"},
-			Author: &feeds.Author{Name: author},
+			Id:      entryUrl,
+			Title:   entry.Title,
+			Link:    &feeds.Link{Href: entryUrl, Type: "application/epub+zip", Rel: "http://opds-spec.org/acquisition"},
+			Author:  &feeds.Author{Name: author},
+			Updated: entryUpdated,
 		})
 	}
 

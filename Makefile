@@ -1,5 +1,3 @@
-# Makefile for the sourdough project
-
 # Using .PHONY declares these targets as not being actual files.
 # This is a good practice for targets that are commands.
 .PHONY: all run build generate test fmt watch build
