@@ -2,9 +2,11 @@ package onboarding
 
 import (
 	"buckleberry/internal/settings"
+	"fmt"
 
 	"github.com/Strubbl/wallabago/v9"
 	"github.com/gofiber/fiber/v3"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type settingsRepo interface {
@@ -33,7 +35,15 @@ func (h *Handler) FinishOnboarding(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).SendString("Invalid form body: " + err.Error())
 	}
 
-	_, err := h.settingsRepo.Create(&formSettings)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(formSettings.Password), bcrypt.DefaultCost)
+
+	if err != nil {
+		return fmt.Errorf("unable to hash password for user %s: %w", formSettings.Username, err)
+	}
+
+	formSettings.Password = string(hashedPassword)
+
+	_, err = h.settingsRepo.Create(&formSettings)
 
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())

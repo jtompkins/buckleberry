@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type settingsReader interface {
@@ -27,7 +28,5 @@ func (m *BasicAuthorizer) Authorize(user, pass string, c fiber.Ctx) bool {
 		return false
 	}
 
-	result := user == settings.Username && pass == settings.Password
-
-	return result
+	return user == settings.Username && bcrypt.CompareHashAndPassword([]byte(pass), []byte(settings.Password)) == nil
 }
