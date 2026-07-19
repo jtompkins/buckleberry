@@ -7,14 +7,25 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-func NewHandler(settingsRepo *Repository) *Handler {
+type settingsRepository interface {
+	Get() (*Settings, error)
+	UpdateWallabagSettings(*Settings) (*Settings, error)
+}
+
+type wallabagPinger interface {
+	Ping() error
+}
+
+func NewHandler(settingsRepo settingsRepository, wallabag wallabagPinger) *Handler {
 	return &Handler{
 		settingsRepo: settingsRepo,
+		wallabag:     wallabag,
 	}
 }
 
 type Handler struct {
-	settingsRepo *Repository
+	settingsRepo settingsRepository
+	wallabag     wallabagPinger
 }
 
 func (h *Handler) Settings(c fiber.Ctx) error {
@@ -24,10 +35,10 @@ func (h *Handler) Settings(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).SendString("couldn't fetch settings")
 	}
 
-	_, err = wallabago.GetTags(wallabago.APICall)
+	connected := h.wallabag.Ping() == nil
 
 	c.Set("Content-Type", "text/html")
-	settingsView := SettingsView(settings, c.Redirect().Messages(), err == nil)
+	settingsView := SettingsView(settings, c.Redirect().Messages(), connected)
 	return settingsView.Render(c.Context(), c.Response().BodyWriter())
 }
 

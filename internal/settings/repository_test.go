@@ -78,19 +78,26 @@ func TestRepositoryCreateAndUpdate(t *testing.T) {
 		t.Error("Create() did not populate database timestamps")
 	}
 
+	// UpdateWallabagSettings only touches the wallabag_* columns; the app
+	// username/password are intentionally left untouched.
 	updatedValues := *created
-	updatedValues.Password = "new-password"
 	updatedValues.WallabagInstanceURL = "https://new.example.com"
 	updatedValues.WallabagUsername = "new-wallabag-user"
 	updatedValues.WallabagPassword = "new-wallabag-password"
 	updatedValues.WallabagClientID = "new-client-id"
 	updatedValues.WallabagClientSecret = "new-client-secret"
 
-	updated, err := repo.Update(&updatedValues)
+	updated, err := repo.UpdateWallabagSettings(&updatedValues)
 	if err != nil {
-		t.Fatalf("Update() error = %v", err)
+		t.Fatalf("UpdateWallabagSettings() error = %v", err)
 	}
 	assertSettingsFields(t, updated, &updatedValues)
+
+	// The credentials the update doesn't manage must be preserved.
+	if updated.Username != created.Username || updated.Password != created.Password {
+		t.Errorf("UpdateWallabagSettings() changed app credentials: got user=%q pass=%q, want user=%q pass=%q",
+			updated.Username, updated.Password, created.Username, created.Password)
+	}
 }
 
 func testSettings() *Settings {
