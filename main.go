@@ -58,7 +58,7 @@ func main() {
 	}
 
 	authHandler := auth.NewHandler(settingsRepo)
-	settingsHandler := settings.NewHandler(settingsRepo)
+	settingsHandler := settings.NewHandler(settingsRepo, wallabag.NewClient())
 	opdsHandler := opds.NewHandler(settingsRepo, wallabag.NewClient(), viper.GetString("BASE_URL"))
 	onboardingHandler := onboarding.NewHandler(settingsRepo)
 
@@ -83,8 +83,8 @@ func main() {
 	app.Get("/settings", onboardingMiddleware.RequireOnboarded, sessionAuthMiddleware.RequireAuth, settingsHandler.Settings)
 	app.Post("/settings", onboardingMiddleware.RequireOnboarded, sessionAuthMiddleware.RequireAuth, settingsHandler.UpdateSettings)
 
-	app.Get("/onboarding", onboardingHandler.HandleOnboarding)
-	app.Post("/onboarding", onboardingHandler.FinishOnboarding)
+	app.Get("/onboarding", onboardingMiddleware.RedirectIfOnboarded, onboardingHandler.HandleOnboarding)
+	app.Post("/onboarding", onboardingMiddleware.RedirectIfOnboarded, onboardingHandler.FinishOnboarding)
 
 	opds := app.Group("/opds", onboardingMiddleware.RequireOnboarded, basicAuthMiddleware)
 
