@@ -170,5 +170,14 @@ func (h *Handler) GetDownload(c fiber.Ctx) error {
 
 	log.Debug("Fetched article, length: ", len(epubBytes))
 
-	return c.Type("epub").Send(epubBytes)
+	// Wallabag's ePUB export leaves bare "&" in the OPF metadata, which strict
+	// readers (e.g. Apple Books) reject. Repair it best-effort; if anything goes
+	// wrong, fall back to the original bytes rather than failing the download.
+	repaired, err := sanitizeEPUB(epubBytes)
+	if err != nil {
+		log.Errorf("repair ePUB for article %d: %v", articleId, err)
+		repaired = epubBytes
+	}
+
+	return c.Type("epub").Send(repaired)
 }
