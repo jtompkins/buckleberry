@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"buckleberry/internal/auth"
 	"buckleberry/internal/database"
@@ -26,6 +27,11 @@ func main() {
 	viper.SetDefault("DB_PATH", "./buckleberry.db")
 	viper.SetDefault("PORT", "8080")
 	viper.SetDefault("BASE_URL", fmt.Sprintf("http://localhost:%s", viper.GetString("PORT")))
+
+	baseURL := viper.GetString("BASE_URL")
+	// Send Secure cookies whenever we're served over HTTPS. Override with
+	// COOKIE_SECURE if TLS is terminated by an upstream proxy.
+	viper.SetDefault("COOKIE_SECURE", strings.HasPrefix(baseURL, "https://"))
 
 	dbPath := viper.GetString("DB_PATH")
 	db, err := database.New(dbPath)
@@ -53,12 +59,16 @@ func main() {
 
 	authHandler := auth.NewHandler(settingsRepo)
 	settingsHandler := settings.NewHandler(settingsRepo, wallabagClient)
-	opdsHandler := opds.NewHandler(settingsRepo, wallabagClient, viper.GetString("BASE_URL"))
+	opdsHandler := opds.NewHandler(settingsRepo, wallabagClient, baseURL)
 	onboardingHandler := onboarding.NewHandler(settingsRepo, wallabagClient)
 
 	app := fiber.New()
 
-	app.Use(session.New())
+	app.Use(session.New(session.Config{
+		CookieHTTPOnly: true,
+		CookieSameSite: "Lax",
+		CookieSecure:   viper.GetBool("COOKIE_SECURE"),
+	}))
 
 	fiberlog.SetLevel(fiberlog.LevelDebug)
 
