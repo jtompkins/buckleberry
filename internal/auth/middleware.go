@@ -1,25 +1,23 @@
 package auth
 
 import (
-	"buckleberry/internal/settings"
-
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/session"
 )
 
-func NewMiddleware(settingsRepo *settings.Repository) *Middleware {
+func NewMiddleware(settingsRepo settingsReader) *Middleware {
 	return &Middleware{
 		settingsRepo: settingsRepo,
 	}
 }
 
 type Middleware struct {
-	settingsRepo *settings.Repository
+	settingsRepo settingsReader
 }
 
 func (m *Middleware) RequireAuth(c fiber.Ctx) error {
 	sess := session.FromContext(c)
-	if sess == nil {
+	if sess == nil || sess.Get("authenticated") != true {
 		return c.Redirect().To("/")
 	}
 

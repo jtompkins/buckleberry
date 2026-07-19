@@ -4,7 +4,20 @@ import (
 	"buckleberry/internal/settings"
 	"fmt"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 )
+
+func hashPassword(t *testing.T, password string) string {
+	t.Helper()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+
+	return string(hash)
+}
 
 type stubSettingsRepo struct {
 	settings *settings.Settings
@@ -36,7 +49,7 @@ func TestSettingsFetchFailure(t *testing.T) {
 }
 
 func TestAuthorizerPass(t *testing.T) {
-	stub := newStubSettingsRepo(&settings.Settings{Username: "user", Password: "pass"}, nil)
+	stub := newStubSettingsRepo(&settings.Settings{Username: "user", Password: hashPassword(t, "pass")}, nil)
 
 	authorizer := NewAuthorizer(stub)
 
@@ -48,7 +61,7 @@ func TestAuthorizerPass(t *testing.T) {
 }
 
 func TestAuthorizerFail(t *testing.T) {
-	stub := newStubSettingsRepo(&settings.Settings{Username: "user", Password: "pass"}, nil)
+	stub := newStubSettingsRepo(&settings.Settings{Username: "user", Password: hashPassword(t, "pass")}, nil)
 
 	authorizer := NewAuthorizer(stub)
 
@@ -62,5 +75,17 @@ func TestAuthorizerFail(t *testing.T) {
 
 	if res {
 		t.Fatal("Authorize(invalid password) == true, want false")
+	}
+}
+
+// A settings row with an empty password hash must never authorize, otherwise a
+// freshly created (but not yet configured) instance would be wide open.
+func TestAuthorizerRejectsEmptyStoredPassword(t *testing.T) {
+	stub := newStubSettingsRepo(&settings.Settings{Username: "user", Password: ""}, nil)
+
+	authorizer := NewAuthorizer(stub)
+
+	if authorizer.Authorize("user", "", nil) {
+		t.Fatal("Authorize() with empty stored hash == true, want false")
 	}
 }

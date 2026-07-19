@@ -1,21 +1,19 @@
 package auth
 
 import (
-	"buckleberry/internal/settings"
-
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/session"
 	"golang.org/x/crypto/bcrypt"
 )
 
-func NewHandler(settingsRepo *settings.Repository) *Handler {
+func NewHandler(settingsRepo settingsReader) *Handler {
 	return &Handler{
 		settingsRepo: settingsRepo,
 	}
 }
 
 type Handler struct {
-	settingsRepo *settings.Repository
+	settingsRepo settingsReader
 }
 
 func (h *Handler) Login(c fiber.Ctx) error {
