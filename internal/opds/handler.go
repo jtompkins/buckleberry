@@ -13,8 +13,8 @@ import (
 	"github.com/gorilla/feeds"
 )
 
-const ACQUISISTION_TYPE string = "application/atom+xml;profile=opds-catalog;kind=acquisition"
-const NAVIGATION_TYPE string = "application/atom+xml;profile=opds-catalog;kind=navigation"
+const ACQ_TYPE string = "application/atom+xml;profile=opds-catalog;kind=acquisition"
+const NAV_TYPE string = "application/atom+xml;profile=opds-catalog;kind=navigation"
 
 type settingsReader interface {
 	Get() (*settings.Settings, error)
@@ -52,12 +52,12 @@ func (h *Handler) GetNavigationFeeds(c fiber.Ctx) error {
 				Title:   "Unread articles",
 				Id:      unreadFeedUrl,
 				Updated: updated,
-				Link:    &feeds.Link{Href: unreadFeedUrl, Type: ACQUISISTION_TYPE},
+				Link:    &feeds.Link{Href: unreadFeedUrl, Type: ACQ_TYPE},
 				Content: "Unread articles from Wallabag, sorted oldest to newest",
 			},
 		},
 		Updated: updated,
-		Link:    &feeds.Link{Href: feedUrl, Rel: "self", Type: NAVIGATION_TYPE},
+		Link:    &feeds.Link{Href: feedUrl, Rel: "self", Type: NAV_TYPE},
 	}
 
 	c.Type("atom", "utf-8")
@@ -79,7 +79,7 @@ func (h *Handler) GetUnreadFeed(c fiber.Ctx) error {
 		Title:   "Unread Wallabag Articles",
 		Id:      feedUrl,
 		Updated: time.Now(),
-		Link:    &feeds.Link{Href: feedUrl, Rel: "self", Type: ACQUISISTION_TYPE},
+		Link:    &feeds.Link{Href: feedUrl, Rel: "self", Type: ACQ_TYPE},
 	}
 
 	entries, err := h.client.GetEntries()

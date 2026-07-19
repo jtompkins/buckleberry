@@ -85,7 +85,7 @@ func TestGetNavigationFeeds(t *testing.T) {
 		t.Errorf("entry ID = %q, want unread feed URL", entry.ID)
 	}
 	assertRFC3339(t, "entry updated", entry.Updated)
-	assertLink(t, entry.Links, "alternate", "https://books.example.com/opds/unread", ACQUISISTION_TYPE)
+	assertLink(t, entry.Links, "alternate", "https://books.example.com/opds/unread", ACQ_TYPE)
 }
 
 func TestGetUnreadFeed(t *testing.T) {
