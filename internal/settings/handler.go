@@ -1,9 +1,8 @@
 package settings
 
 import (
-	"fmt"
-
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/log"
 )
 
 type settingsRepository interface {
@@ -32,7 +31,8 @@ func (h *Handler) Settings(c fiber.Ctx) error {
 	settings, err := h.settingsRepo.Get()
 
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString("couldn't fetch settings")
+		log.Error("fetch settings: ", err)
+		return c.Status(fiber.StatusInternalServerError).SendString("Couldn't load settings")
 	}
 
 	connected := h.wallabag.Ping() == nil
@@ -46,13 +46,15 @@ func (h *Handler) UpdateSettings(c fiber.Ctx) error {
 	var formSettings Settings
 
 	if err := c.Bind().Form(&formSettings); err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString("Invalid form body: " + err.Error())
+		log.Error("bind settings form: ", err)
+		return c.Status(fiber.StatusBadRequest).SendString("Invalid form submission")
 	}
 
 	_, err := h.settingsRepo.UpdateWallabagSettings(&formSettings)
 
 	if err != nil {
-		return c.Redirect().With("error", fmt.Sprintf("couldn't save settings: %s", err.Error())).To("/settings")
+		log.Error("update settings: ", err)
+		return c.Redirect().With("error", "Couldn't save settings").To("/settings")
 	}
 
 	h.wallabag.Configure(&formSettings)

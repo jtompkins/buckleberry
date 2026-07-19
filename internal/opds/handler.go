@@ -65,7 +65,8 @@ func (h *Handler) GetNavigationFeeds(c fiber.Ctx) error {
 	atomFeed, err := feed.ToAtom()
 
 	if err != nil {
-		return c.Status(500).SendString(err.Error())
+		log.Error("generate navigation feed: ", err)
+		return c.Status(fiber.StatusInternalServerError).SendString("Failed to generate feed")
 	}
 
 	return c.SendString(atomFeed)
@@ -84,7 +85,8 @@ func (h *Handler) GetUnreadFeed(c fiber.Ctx) error {
 	entries, err := h.client.GetEntries()
 
 	if err != nil {
-		return c.Status(500).SendString(fmt.Sprintf("Failed to fetch Wallabag articles: %s", err.Error()))
+		log.Error("fetch Wallabag entries: ", err)
+		return c.Status(fiber.StatusInternalServerError).SendString("Failed to fetch Wallabag articles")
 	}
 
 	var feedItems []*feeds.Item
@@ -135,7 +137,8 @@ func (h *Handler) GetUnreadFeed(c fiber.Ctx) error {
 	atomFeed, err := feed.ToAtom()
 
 	if err != nil {
-		return c.Status(500).SendString(err.Error())
+		log.Error("generate unread feed: ", err)
+		return c.Status(fiber.StatusInternalServerError).SendString("Failed to generate feed")
 	}
 
 	c.Type("atom", "utf-8")
@@ -161,8 +164,8 @@ func (h *Handler) GetDownload(c fiber.Ctx) error {
 	epubBytes, err := h.client.ExportEntry(articleId, "epub")
 
 	if err != nil {
-		log.Debug("Error when fetching ePUB: ", err.Error())
-		return c.Status(500).SendString(err.Error())
+		log.Errorf("export article %d as ePUB: %v", articleId, err)
+		return c.Status(fiber.StatusInternalServerError).SendString("Failed to download article")
 	}
 
 	log.Debug("Fetched article, length: ", len(epubBytes))

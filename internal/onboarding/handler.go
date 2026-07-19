@@ -2,9 +2,9 @@ package onboarding
 
 import (
 	"buckleberry/internal/settings"
-	"fmt"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/log"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -36,7 +36,8 @@ func (h *Handler) HandleOnboarding(c fiber.Ctx) error {
 	var formSettings settings.Settings
 
 	if err := c.Bind().Form(&formSettings); err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString("Invalid form body: " + err.Error())
+		log.Error("bind onboarding form: ", err)
+		return c.Status(fiber.StatusBadRequest).SendString("Invalid form submission")
 	}
 
 	repeatedPassword := c.FormValue("password-again")
@@ -52,7 +53,8 @@ func (h *Handler) HandleOnboarding(c fiber.Ctx) error {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(formSettings.Password), bcrypt.DefaultCost)
 
 	if err != nil {
-		return fmt.Errorf("unable to hash password for user %s: %w", formSettings.Username, err)
+		log.Errorf("hash password for user %s: %v", formSettings.Username, err)
+		return c.Status(fiber.StatusInternalServerError).SendString("Couldn't complete onboarding")
 	}
 
 	formSettings.Password = string(hashedPassword)
@@ -60,7 +62,8 @@ func (h *Handler) HandleOnboarding(c fiber.Ctx) error {
 	_, err = h.settingsRepo.Create(&formSettings)
 
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+		log.Error("create settings: ", err)
+		return c.Status(fiber.StatusInternalServerError).SendString("Couldn't complete onboarding")
 	}
 
 	h.wallabag.Configure(&formSettings)
