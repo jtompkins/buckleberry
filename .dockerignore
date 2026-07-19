@@ -1,0 +1,10 @@
+.git
+.gitignore
+.github
+*.db
+.env
+out/
+.DS_Store
+README.md
+Dockerfile
+.dockerignore

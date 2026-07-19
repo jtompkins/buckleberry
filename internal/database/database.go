@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type DB struct {
@@ -42,7 +42,7 @@ var migrations = []migration{
 func New(dbPath string) (*DB, error) {
 	ctx := context.Background()
 
-	sqlDB, err := sqlx.Open("sqlite3", dbPath)
+	sqlDB, err := sqlx.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
