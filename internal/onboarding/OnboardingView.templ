@@ -1,43 +1,58 @@
 package onboarding
 
-templ OnboardingView() {
-	<!DOCTYPE html>
-	<html lang="en">
-		<head>
-			<meta charset="UTF-8"/>
-			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-			<title>Buckleberry Onboarding</title>
-			<link rel="preconnect" href="https://fonts.googleapis.com"/>
-			<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-			<script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.7/dist/htmx.min.js" integrity="sha384-ZBXiYtYQ6hJ2Y0ZNoYuI+Nq5MqWBr+chMrS/RkXpNzQCApHEhOt2aY8EJgqwHLkJ" crossorigin="anonymous"></script>
-			<script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-		</head>
-		<body>
-			<h1>Welcome to Buckleberry</h1>
+import (
+	"buckleberry/internal/shared"
+	"buckleberry/internal/settings"
+)
 
+templ OnboardingView(settingsModel *settings.Settings, errorMsgs []string) {
+	@shared.Layout("Onboarding") {
+		<div>
+			<h1>Welcome to Buckleberry!</h1>
+			if len(errorMsgs) > 0 {
+				<div>
+					<ul>
+						for _, msg := range errorMsgs {
+							<li>{ msg }</li>
+						}
+					</ul>
+				</div>
+			}
 			<form method="POST" action="/onboarding">
 				<h2>Authentication</h2>
-				
-				<label for="name">Username</label>
-				<input type="text" name="username" placeholder="username" required />
-
-				<label for="password">Password</label>
-				<input type="password" name="password" placeholder="password" required />
-
-				<h2>Wallabag Connection</h2>
-
-				<label for="wallabag-url">Instance URL</label>
-				<input type="text" name="wallabag-url" placeholder="http://my-instance.wallabag.com" required />
-				<label for="wallabag-username">Username</label>
-				<input type="text" name="wallabag-username" placeholder="username" required />
-				<label for="wallabag-password">Password</label>
-				<input type="password" name="wallabag-password" placeholder="password" required />
-				<label for="wallabag-client-id">Client ID</label>
-				<input type="text" name="wallbag-client-id" placeholder="client id" required />
-				<label for="wallabag-client-secret">Client Secret</label>
-				<input type="password" name="wallabag-client-secret" placeholder="client secret" required />
-				<input type="submit" value="Get Started" />
+				<p>
+					<label for="name">Username</label>
+					<input
+						type="text"
+						name="username"
+						placeholder="username"
+						required
+						if settingsModel != nil {
+							value={settingsModel.Username}
+						}
+					/>
+				</p>
+				<p>
+					<label for="password">Password</label>
+					<input
+						type="password"
+						name="password"
+						placeholder="password"
+						required
+					/>
+				</p>
+				<p>
+					<label for="password">Password</label>
+					<input
+						type="password"
+						name="password-again"
+						placeholder="repeat password"
+						required
+					/>
+				</p>
+				@settings.WallabagSettingsPartial(settingsModel)
+				<input type="submit" value="Get Started"/>
 			</form>
-		</body>
-	</html>
+		</div>
+	}
 }

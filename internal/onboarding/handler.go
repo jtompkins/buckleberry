@@ -24,7 +24,7 @@ func NewHandler(repo settingsRepo) *Handler {
 
 func (h *Handler) HandleOnboarding(c fiber.Ctx) error {
 	c.Set("Content-Type", "text/html")
-	component := OnboardingView()
+	component := OnboardingView(nil, []string{})
 	return component.Render(c.Context(), c.Response().BodyWriter())
 }
 
@@ -33,6 +33,16 @@ func (h *Handler) FinishOnboarding(c fiber.Ctx) error {
 
 	if err := c.Bind().Form(&formSettings); err != nil {
 		return c.Status(fiber.StatusBadRequest).SendString("Invalid form body: " + err.Error())
+	}
+
+	repeatedPassword := c.FormValue("password-again")
+
+	if formSettings.Password != repeatedPassword {
+		c.Set("Content-Type", "text/html")
+
+		onboardingView := OnboardingView(&formSettings, []string{"Passwords don't match"})
+
+		return onboardingView.Render(c.Context(), c.Response().BodyWriter())
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(formSettings.Password), bcrypt.DefaultCost)
@@ -57,6 +67,5 @@ func (h *Handler) FinishOnboarding(c fiber.Ctx) error {
 		formSettings.WallabagPassword),
 	)
 
-	return c.Redirect().To("/")
-
+	return c.Redirect().To("/settings")
 }
