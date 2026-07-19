@@ -28,5 +28,5 @@ func (m *BasicAuthorizer) Authorize(user, pass string, c fiber.Ctx) bool {
 		return false
 	}
 
-	return user == settings.Username && bcrypt.CompareHashAndPassword([]byte(pass), []byte(settings.Password)) == nil
+	return user == settings.Username && bcrypt.CompareHashAndPassword([]byte(settings.Password), []byte(pass)) == nil
 }

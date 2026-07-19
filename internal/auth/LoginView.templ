@@ -1,0 +1,32 @@
+package auth
+
+import "buckleberry/internal/shared"
+import "github.com/gofiber/fiber/v3"
+
+templ LoginView(errorMsgs []fiber.FlashMessage) {
+  @shared.Layout("Login") {
+    <h1>Log in to Buckleberry</h1>
+    
+    <div>
+      if len(errorMsgs) > 0 {
+        <ul>
+          for _, msg := range(errorMsgs) {
+            <li>{msg.Value}</li>
+          }
+        </ul>
+      }
+    </div>
+
+    <form method="POST" action="/login">
+      <p>
+        <label for="username">Username</label>
+        <input type="text" name="username" placeholder="username" required />
+      </p>
+      <p>
+        <label for="password">Password</label>
+        <input type="password" name="password" placeholder="password" required />
+      </p>
+      <input type="submit" value="Log in" />
+    </form>
+  }
+}
