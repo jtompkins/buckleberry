@@ -4,7 +4,6 @@ import (
 	"buckleberry/internal/settings"
 	"fmt"
 
-	"github.com/Strubbl/wallabago/v9"
 	"github.com/gofiber/fiber/v3"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -14,21 +13,26 @@ type settingsRepo interface {
 	Create(settings *settings.Settings) (*settings.Settings, error)
 }
 
+type wallabagConfigurer interface {
+	Configure(*settings.Settings)
+}
+
 type Handler struct {
 	settingsRepo settingsRepo
+	wallabag     wallabagConfigurer
 }
 
-func NewHandler(repo settingsRepo) *Handler {
-	return &Handler{settingsRepo: repo}
+func NewHandler(repo settingsRepo, wallabag wallabagConfigurer) *Handler {
+	return &Handler{settingsRepo: repo, wallabag: wallabag}
 }
 
-func (h *Handler) HandleOnboarding(c fiber.Ctx) error {
+func (h *Handler) Onboarding(c fiber.Ctx) error {
 	c.Set("Content-Type", "text/html")
 	component := OnboardingView(nil, []string{})
 	return component.Render(c.Context(), c.Response().BodyWriter())
 }
 
-func (h *Handler) FinishOnboarding(c fiber.Ctx) error {
+func (h *Handler) HandleOnboarding(c fiber.Ctx) error {
 	var formSettings settings.Settings
 
 	if err := c.Bind().Form(&formSettings); err != nil {
@@ -59,13 +63,7 @@ func (h *Handler) FinishOnboarding(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 	}
 
-	wallabago.SetConfig(wallabago.NewWallabagConfig(
-		formSettings.WallabagInstanceURL,
-		formSettings.WallabagClientID,
-		formSettings.WallabagClientSecret,
-		formSettings.WallabagUsername,
-		formSettings.WallabagPassword),
-	)
+	h.wallabag.Configure(&formSettings)
 
 	return c.Redirect().To("/settings")
 }

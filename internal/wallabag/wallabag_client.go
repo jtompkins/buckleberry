@@ -3,6 +3,8 @@ package wallabag
 import (
 	"fmt"
 
+	"buckleberry/internal/settings"
+
 	"github.com/Strubbl/wallabago/v9"
 )
 
@@ -10,6 +12,19 @@ type Client struct{}
 
 func NewClient() Client {
 	return Client{}
+}
+
+// Configure applies the stored Wallabag credentials to the wallabago package's
+// process-global config. Call it once at startup and again whenever the
+// settings change.
+func (Client) Configure(s *settings.Settings) {
+	wallabago.SetConfig(wallabago.NewWallabagConfig(
+		s.WallabagInstanceURL,
+		s.WallabagClientID,
+		s.WallabagClientSecret,
+		s.WallabagUsername,
+		s.WallabagPassword,
+	))
 }
 
 func (Client) GetEntries() (*wallabago.Entries, error) {

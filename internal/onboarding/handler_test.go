@@ -34,6 +34,14 @@ func (s *stubOnboardingRepo) Create(in *settings.Settings) (*settings.Settings, 
 	return in, nil
 }
 
+type stubConfigurer struct {
+	configured *settings.Settings
+}
+
+func (s *stubConfigurer) Configure(in *settings.Settings) {
+	s.configured = in
+}
+
 func postForm(t *testing.T, app *fiber.App, path string, values map[string]string) *http.Response {
 	t.Helper()
 
@@ -65,12 +73,13 @@ func validOnboardingForm() map[string]string {
 	}
 }
 
-func TestFinishOnboardingSuccess(t *testing.T) {
+func TestHandleOnboardingSuccess(t *testing.T) {
 	repo := &stubOnboardingRepo{}
-	handler := NewHandler(repo)
+	configurer := &stubConfigurer{}
+	handler := NewHandler(repo, configurer)
 
 	app := fiber.New()
-	app.Post("/onboarding", handler.FinishOnboarding)
+	app.Post("/onboarding", handler.HandleOnboarding)
 
 	res := postForm(t, app, "/onboarding", validOnboardingForm())
 	defer res.Body.Close()
@@ -94,14 +103,19 @@ func TestFinishOnboardingSuccess(t *testing.T) {
 	if repo.created.Password == "secret" || repo.created.Password == "" {
 		t.Errorf("created password = %q, want a bcrypt hash", repo.created.Password)
 	}
+	// Successful onboarding must push the new credentials into the Wallabag client.
+	if configurer.configured == nil {
+		t.Error("Configure() was not called after onboarding")
+	}
 }
 
-func TestFinishOnboardingPasswordMismatch(t *testing.T) {
+func TestHandleOnboardingPasswordMismatch(t *testing.T) {
 	repo := &stubOnboardingRepo{}
-	handler := NewHandler(repo)
+	configurer := &stubConfigurer{}
+	handler := NewHandler(repo, configurer)
 
 	app := fiber.New()
-	app.Post("/onboarding", handler.FinishOnboarding)
+	app.Post("/onboarding", handler.HandleOnboarding)
 
 	form := validOnboardingForm()
 	form["password-again"] = "different"
@@ -114,6 +128,9 @@ func TestFinishOnboardingPasswordMismatch(t *testing.T) {
 	}
 	if repo.created != nil {
 		t.Error("Create() should not be called when passwords don't match")
+	}
+	if configurer.configured != nil {
+		t.Error("Configure() should not be called when passwords don't match")
 	}
 }
 

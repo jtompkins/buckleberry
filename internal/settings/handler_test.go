@@ -29,12 +29,17 @@ func (s *stubRepo) UpdateWallabagSettings(in *Settings) (*Settings, error) {
 	return in, nil
 }
 
-type stubPinger struct {
-	err error
+type stubWallabag struct {
+	pingErr    error
+	configured *Settings
 }
 
-func (s stubPinger) Ping() error {
-	return s.err
+func (s *stubWallabag) Ping() error {
+	return s.pingErr
+}
+
+func (s *stubWallabag) Configure(in *Settings) {
+	s.configured = in
 }
 
 func postForm(t *testing.T, app *fiber.App, path string, values map[string]string) *http.Response {
@@ -57,7 +62,7 @@ func postForm(t *testing.T, app *fiber.App, path string, values map[string]strin
 
 func TestSettingsRenders(t *testing.T) {
 	repo := &stubRepo{settings: &Settings{Username: "reader", WallabagInstanceURL: "https://wallabag.example.com"}}
-	handler := NewHandler(repo, stubPinger{})
+	handler := NewHandler(repo, &stubWallabag{})
 
 	app := fiber.New()
 	app.Get("/settings", handler.Settings)
@@ -77,7 +82,7 @@ func TestSettingsRenders(t *testing.T) {
 }
 
 func TestSettingsRepoError(t *testing.T) {
-	handler := NewHandler(&stubRepo{getErr: errors.New("db down")}, stubPinger{})
+	handler := NewHandler(&stubRepo{getErr: errors.New("db down")}, &stubWallabag{})
 
 	app := fiber.New()
 	app.Get("/settings", handler.Settings)
@@ -96,7 +101,7 @@ func TestSettingsRepoError(t *testing.T) {
 // A failing Ping must not fail the page; it just renders as "not connected".
 func TestSettingsRendersWhenWallabagUnreachable(t *testing.T) {
 	repo := &stubRepo{settings: &Settings{}}
-	handler := NewHandler(repo, stubPinger{err: errors.New("unreachable")})
+	handler := NewHandler(repo, &stubWallabag{pingErr: errors.New("unreachable")})
 
 	app := fiber.New()
 	app.Get("/settings", handler.Settings)
@@ -114,7 +119,7 @@ func TestSettingsRendersWhenWallabagUnreachable(t *testing.T) {
 
 func TestUpdateSettingsSuccess(t *testing.T) {
 	repo := &stubRepo{}
-	handler := NewHandler(repo, stubPinger{})
+	handler := NewHandler(repo, &stubWallabag{})
 
 	app := fiber.New()
 	app.Post("/settings", handler.UpdateSettings)
@@ -144,7 +149,7 @@ func TestUpdateSettingsSuccess(t *testing.T) {
 
 func TestUpdateSettingsError(t *testing.T) {
 	repo := &stubRepo{updateErr: errors.New("write failed")}
-	handler := NewHandler(repo, stubPinger{})
+	handler := NewHandler(repo, &stubWallabag{})
 
 	app := fiber.New()
 	app.Post("/settings", handler.UpdateSettings)

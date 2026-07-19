@@ -11,7 +11,6 @@ import (
 	"buckleberry/internal/settings"
 	"buckleberry/internal/wallabag"
 
-	"github.com/Strubbl/wallabago/v9"
 	"github.com/gofiber/fiber/v3"
 	fiberlog "github.com/gofiber/fiber/v3/log"
 	"github.com/gofiber/fiber/v3/middleware/basicauth"
@@ -36,31 +35,26 @@ func main() {
 	}
 
 	settingsRepo := settings.NewRepository(db)
+	wallabagClient := wallabag.NewClient()
 
 	isOnboarded, err := settingsRepo.IsOnboarded()
 
 	if err != nil {
 		log.Fatal("Failed to find is onboarded: ", err)
 	} else if isOnboarded {
-		settings, err := settingsRepo.Get()
+		currentSettings, err := settingsRepo.Get()
 
 		if err != nil {
 			log.Fatal("getting settings: ", err.Error())
 		}
 
-		wallabago.SetConfig(wallabago.NewWallabagConfig(
-			settings.WallabagInstanceURL,
-			settings.WallabagClientID,
-			settings.WallabagClientSecret,
-			settings.WallabagUsername,
-			settings.WallabagPassword),
-		)
+		wallabagClient.Configure(currentSettings)
 	}
 
 	authHandler := auth.NewHandler(settingsRepo)
-	settingsHandler := settings.NewHandler(settingsRepo, wallabag.NewClient())
-	opdsHandler := opds.NewHandler(settingsRepo, wallabag.NewClient(), viper.GetString("BASE_URL"))
-	onboardingHandler := onboarding.NewHandler(settingsRepo)
+	settingsHandler := settings.NewHandler(settingsRepo, wallabagClient)
+	opdsHandler := opds.NewHandler(settingsRepo, wallabagClient, viper.GetString("BASE_URL"))
+	onboardingHandler := onboarding.NewHandler(settingsRepo, wallabagClient)
 
 	app := fiber.New()
 
@@ -83,8 +77,8 @@ func main() {
 	app.Get("/settings", onboardingMiddleware.RequireOnboarded, sessionAuthMiddleware.RequireAuth, settingsHandler.Settings)
 	app.Post("/settings", onboardingMiddleware.RequireOnboarded, sessionAuthMiddleware.RequireAuth, settingsHandler.UpdateSettings)
 
-	app.Get("/onboarding", onboardingMiddleware.RedirectIfOnboarded, onboardingHandler.HandleOnboarding)
-	app.Post("/onboarding", onboardingMiddleware.RedirectIfOnboarded, onboardingHandler.FinishOnboarding)
+	app.Get("/onboarding", onboardingMiddleware.RedirectIfOnboarded, onboardingHandler.Onboarding)
+	app.Post("/onboarding", onboardingMiddleware.RedirectIfOnboarded, onboardingHandler.HandleOnboarding)
 
 	opds := app.Group("/opds", onboardingMiddleware.RequireOnboarded, basicAuthMiddleware)
 

@@ -3,7 +3,6 @@ package settings
 import (
 	"fmt"
 
-	"github.com/Strubbl/wallabago/v9"
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -12,11 +11,12 @@ type settingsRepository interface {
 	UpdateWallabagSettings(*Settings) (*Settings, error)
 }
 
-type wallabagPinger interface {
+type wallabagClient interface {
 	Ping() error
+	Configure(*Settings)
 }
 
-func NewHandler(settingsRepo settingsRepository, wallabag wallabagPinger) *Handler {
+func NewHandler(settingsRepo settingsRepository, wallabag wallabagClient) *Handler {
 	return &Handler{
 		settingsRepo: settingsRepo,
 		wallabag:     wallabag,
@@ -25,7 +25,7 @@ func NewHandler(settingsRepo settingsRepository, wallabag wallabagPinger) *Handl
 
 type Handler struct {
 	settingsRepo settingsRepository
-	wallabag     wallabagPinger
+	wallabag     wallabagClient
 }
 
 func (h *Handler) Settings(c fiber.Ctx) error {
@@ -55,13 +55,7 @@ func (h *Handler) UpdateSettings(c fiber.Ctx) error {
 		return c.Redirect().With("error", fmt.Sprintf("couldn't save settings: %s", err.Error())).To("/settings")
 	}
 
-	wallabago.SetConfig(wallabago.NewWallabagConfig(
-		formSettings.WallabagInstanceURL,
-		formSettings.WallabagClientID,
-		formSettings.WallabagClientSecret,
-		formSettings.WallabagUsername,
-		formSettings.WallabagPassword),
-	)
+	h.wallabag.Configure(&formSettings)
 
 	return c.Redirect().With("success", "Settings updated!").To("/settings")
 }
