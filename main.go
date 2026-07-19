@@ -15,6 +15,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	fiberlog "github.com/gofiber/fiber/v3/log"
 	"github.com/gofiber/fiber/v3/middleware/basicauth"
+	"github.com/gofiber/fiber/v3/middleware/session"
 	"github.com/spf13/viper"
 )
 
@@ -56,29 +57,36 @@ func main() {
 		)
 	}
 
-	authorizer := auth.NewAuthorizer(settingsRepo)
+	authHandler := auth.NewHandler(settingsRepo)
+	settingsHandler := settings.NewHandler(settingsRepo)
 	opdsHandler := opds.NewHandler(settingsRepo, wallabag.NewClient(), viper.GetString("BASE_URL"))
 	onboardingHandler := onboarding.NewHandler(settingsRepo)
 
 	app := fiber.New()
 
+	app.Use(session.New())
+
 	fiberlog.SetLevel(fiberlog.LevelDebug)
 
-	authMiddleware := basicauth.New(basicauth.Config{
+	authorizer := auth.NewAuthorizer(settingsRepo)
+	basicAuthMiddleware := basicauth.New(basicauth.Config{
 		Users:      map[string]string{},
 		Authorizer: authorizer.Authorize,
 	})
 
+	sessionAuthMiddleware := auth.NewMiddleware(settingsRepo)
 	onboardingMiddleware := onboarding.NewMiddleware(settingsRepo)
 
-	app.Get("/", onboardingMiddleware.RequireOnboarded, func(c fiber.Ctx) error {
-		return c.SendString("Hello, world!")
-	})
+	app.Get("/", onboardingMiddleware.RequireOnboarded, authHandler.Login)
+	app.Post("/login", onboardingMiddleware.RequireOnboarded, authHandler.HandleLogin)
+
+	app.Get("/settings", onboardingMiddleware.RequireOnboarded, sessionAuthMiddleware.RequireAuth, settingsHandler.Settings)
+	app.Post("/settings", onboardingMiddleware.RequireOnboarded, sessionAuthMiddleware.RequireAuth, settingsHandler.UpdateSettings)
 
 	app.Get("/onboarding", onboardingHandler.HandleOnboarding)
 	app.Post("/onboarding", onboardingHandler.FinishOnboarding)
 
-	opds := app.Group("/opds", onboardingMiddleware.RequireOnboarded, authMiddleware)
+	opds := app.Group("/opds", onboardingMiddleware.RequireOnboarded, basicAuthMiddleware)
 
 	opds.Get("/", opdsHandler.GetNavigationFeeds)
 	opds.Get("/unread", opdsHandler.GetUnreadFeed)
