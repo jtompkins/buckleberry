@@ -55,9 +55,9 @@ func (r *Repository) Create(settings *Settings) (*Settings, error) {
 	return r.Get()
 }
 
-func (r *Repository) Update(settings *Settings) (*Settings, error) {
+func (r *Repository) UpdateWallabagSettings(settings *Settings) (*Settings, error) {
 	_, err := r.db.NamedExec(
-		"UPDATE settings SET password = :password, wallabag_instance_url = :wallabag_instance_url, wallabag_username = :wallabag_username, wallabag_password = :wallabag_password, wallabag_client_id = :wallabag_client_id, wallabag_client_secret = :wallabag_client_secret",
+		"UPDATE settings SET wallabag_instance_url = :wallabag_instance_url, wallabag_username = :wallabag_username, wallabag_password = :wallabag_password, wallabag_client_id = :wallabag_client_id, wallabag_client_secret = :wallabag_client_secret",
 		settings,
 	)
 

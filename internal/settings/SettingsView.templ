@@ -1,0 +1,32 @@
+package settings
+
+import "buckleberry/internal/shared"
+import "github.com/gofiber/fiber/v3"
+
+templ SettingsView(settings *Settings, messages []fiber.FlashMessage, goodConnection bool) {
+	@shared.Layout("Settings") {
+		<h1>Buckleberry Settings</h1>
+		if len(messages) > 0 {
+			<ul>
+				for _, msg := range(messages) {
+					<li>{ msg.Value }</li>
+				}
+			</ul>
+		}
+		<h2>Status</h2>
+		<ul>
+			<li>
+				<strong>Wallabag connection:</strong>
+				if goodConnection {
+					<span style="color: green">✅</span>
+				} else {
+					<span style="color: red">❌</span>
+				}
+			</li>
+		</ul>
+		<form method="POST" action="/settings">
+			@WallabagSettingsPartial(settings)
+			<input type="submit" value="Update settings"/>
+		</form>
+	}
+}
