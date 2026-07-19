@@ -22,6 +22,16 @@ func (Client) GetEntries() (*wallabago.Entries, error) {
 	return &entries, nil
 }
 
+// Ping checks connectivity to the configured Wallabag instance by making a
+// lightweight authenticated API call.
+func (Client) Ping() error {
+	if _, err := wallabago.GetTags(wallabago.APICall); err != nil {
+		return fmt.Errorf("ping Wallabag: %w", err)
+	}
+
+	return nil
+}
+
 func (Client) ExportEntry(id int, format string) ([]byte, error) {
 	epubBytes, err := wallabago.ExportEntry(wallabago.APICall, id, format)
 
