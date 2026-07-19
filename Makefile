@@ -1,6 +1,6 @@
 # Using .PHONY declares these targets as not being actual files.
 # This is a good practice for targets that are commands.
-.PHONY: all run build generate test fmt watch build
+.PHONY: all run build generate test fmt watch db.reset
 
 # The default target executed when you just run `make`
 all: build
