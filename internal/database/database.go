@@ -37,6 +37,14 @@ var migrations = []migration{
 			);
 		`,
 	},
+	{
+		version: 2,
+		query: `
+			ALTER TABLE settings ADD COLUMN use_internal_epub_builder INTEGER DEFAULT FALSE;
+			ALTER TABLE settings DROP COLUMN sync_interval;
+			ALTER TABLE settings DROP COLUMN last_sync;	
+		`,
+	},
 }
 
 func New(dbPath string) (*DB, error) {

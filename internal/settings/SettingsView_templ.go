@@ -92,7 +92,19 @@ func SettingsView(settings *Settings, messages []fiber.FlashMessage, goodConnect
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</li></ul><form method=\"POST\" action=\"/settings\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</li></ul><form method=\"POST\" action=\"/settings\"><h2>Configuration</h2><p><label for=\"use-internal-epub-builder\">Use Internal EPUB Builder</label> <input type=\"checkbox\" name=\"use-internal-epub-builder\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if settings != nil {
+				if settings.UseInternalEpubBuilder {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, " checked")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "></p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -100,7 +112,7 @@ func SettingsView(settings *Settings, messages []fiber.FlashMessage, goodConnect
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<input type=\"submit\" value=\"Update settings\"></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<input type=\"submit\" value=\"Update settings\"></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

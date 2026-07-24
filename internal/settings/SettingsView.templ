@@ -25,6 +25,17 @@ templ SettingsView(settings *Settings, messages []fiber.FlashMessage, goodConnec
 			</li>
 		</ul>
 		<form method="POST" action="/settings">
+			<h2>Configuration</h2>
+			<p>
+				<label for="use-internal-epub-builder">Use Internal EPUB Builder</label>
+				<input
+					type="checkbox"
+					name="use-internal-epub-builder"
+					if settings != nil {
+						checked?={ settings.UseInternalEpubBuilder }
+					}
+				/>
+			</p>
 			@WallabagSettingsPartial(settings)
 			<input type="submit" value="Update settings"/>
 		</form>

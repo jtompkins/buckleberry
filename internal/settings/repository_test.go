@@ -71,10 +71,7 @@ func TestRepositoryCreateAndUpdate(t *testing.T) {
 	if created.ID == 0 {
 		t.Error("Create() ID = 0, want generated ID")
 	}
-	if created.SyncInterval != 15 {
-		t.Errorf("Create() SyncInterval = %d, want 15", created.SyncInterval)
-	}
-	if created.CreatedAt.IsZero() || created.UpdatedAt.IsZero() || created.LastSync.IsZero() {
+	if created.CreatedAt.IsZero() || created.UpdatedAt.IsZero() {
 		t.Error("Create() did not populate database timestamps")
 	}
 
