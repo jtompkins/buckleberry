@@ -1,6 +1,7 @@
 package opds
 
 import (
+	"buckleberry/internal/epub"
 	"buckleberry/internal/settings"
 	"encoding/xml"
 	"errors"
@@ -48,6 +49,7 @@ type stubWallabagClient struct {
 	exportErr      error
 	exportedID     int
 	exportedFormat string
+	gotEntryID     int
 }
 
 type stubSettingsRepo struct {
@@ -60,7 +62,42 @@ func (r *stubSettingsRepo) Get() (*settings.Settings, error) {
 }
 
 func (s *stubWallabagClient) GetEntry(id int) (*wallabago.Item, error) {
+	s.gotEntryID = id
 	return s.entry, s.entryErr
+}
+
+type stubArticleFetcher struct {
+	article *epub.ReadableArticle
+	err     error
+
+	gotTitle    string
+	gotAuthor   string
+	gotContent  string
+	gotTempPath string
+}
+
+func (s *stubArticleFetcher) FetchFromContent(title, author, content, tempPath string) (*epub.ReadableArticle, error) {
+	s.gotTitle = title
+	s.gotAuthor = author
+	s.gotContent = content
+	s.gotTempPath = tempPath
+	return s.article, s.err
+}
+
+type stubEPUBBuilder struct {
+	output []byte
+	err    error
+
+	gotArticle *epub.ReadableArticle
+}
+
+func (s *stubEPUBBuilder) Build(article *epub.ReadableArticle, writer io.Writer) error {
+	s.gotArticle = article
+	if s.err != nil {
+		return s.err
+	}
+	_, err := writer.Write(s.output)
+	return err
 }
 
 func (s *stubWallabagClient) GetEntries() (*wallabago.Entries, error) {
@@ -188,6 +225,111 @@ func TestGetDownload(t *testing.T) {
 	}
 	if body := readBody(t, response); body != "epub contents" {
 		t.Errorf("body = %q, want %q", body, "epub contents")
+	}
+}
+
+func TestGetDownloadUsesInternalBuilder(t *testing.T) {
+	client := &stubWallabagClient{entry: &wallabago.Item{
+		ID:          42,
+		Title:       "An article",
+		Content:     "<p>body</p>",
+		PublishedBy: []string{"Ada", "Grace"},
+	}}
+	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: true}}
+	wantArticle := &epub.ReadableArticle{Title: "An article", Author: "Ada, Grace", Content: "<p>body</p>"}
+	fetcher := &stubArticleFetcher{article: wantArticle}
+	builder := &stubEPUBBuilder{output: []byte("built epub bytes")}
+	handler := NewHandler(repo, client, fetcher, builder, "https://books.example.com")
+	app := fiber.New()
+	app.Get("/opds/download/:id", handler.GetDownload)
+
+	response := performRequest(t, app, "/opds/download/42")
+	defer response.Body.Close()
+
+	if response.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusOK)
+	}
+	if got := response.Header.Get("Content-Type"); got != "application/epub+zip" {
+		t.Errorf("Content-Type = %q, want application/epub+zip", got)
+	}
+	if body := readBody(t, response); body != "built epub bytes" {
+		t.Errorf("body = %q, want %q", body, "built epub bytes")
+	}
+
+	if client.gotEntryID != 42 {
+		t.Errorf("GetEntry() called with id = %d, want 42", client.gotEntryID)
+	}
+	if fetcher.gotTitle != "An article" || fetcher.gotAuthor != "Ada, Grace" || fetcher.gotContent != "<p>body</p>" {
+		t.Errorf("FetchFromContent() called with title=%q author=%q content=%q, want title=%q author=%q content=%q",
+			fetcher.gotTitle, fetcher.gotAuthor, fetcher.gotContent, "An article", "Ada, Grace", "<p>body</p>")
+	}
+	if fetcher.gotTempPath == "" {
+		t.Error("FetchFromContent() called with empty tempPath")
+	}
+	if builder.gotArticle != wantArticle {
+		t.Errorf("Build() called with article = %#v, want the article returned by the fetcher", builder.gotArticle)
+	}
+}
+
+func TestGetDownloadInternalBuilderEntryFetchError(t *testing.T) {
+	client := &stubWallabagClient{entryErr: errors.New("entry unavailable")}
+	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: true}}
+	handler := NewHandler(repo, client, &stubArticleFetcher{}, &stubEPUBBuilder{}, "https://books.example.com")
+	app := fiber.New()
+	app.Get("/opds/download/:id", handler.GetDownload)
+
+	response := performRequest(t, app, "/opds/download/42")
+	defer response.Body.Close()
+
+	if response.StatusCode != fiber.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusInternalServerError)
+	}
+}
+
+func TestGetDownloadInternalBuilderFetchError(t *testing.T) {
+	client := &stubWallabagClient{entry: &wallabago.Item{ID: 42, Title: "An article"}}
+	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: true}}
+	fetcher := &stubArticleFetcher{err: errors.New("fetch failed")}
+	handler := NewHandler(repo, client, fetcher, &stubEPUBBuilder{}, "https://books.example.com")
+	app := fiber.New()
+	app.Get("/opds/download/:id", handler.GetDownload)
+
+	response := performRequest(t, app, "/opds/download/42")
+	defer response.Body.Close()
+
+	if response.StatusCode != fiber.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusInternalServerError)
+	}
+}
+
+func TestGetDownloadInternalBuilderBuildError(t *testing.T) {
+	client := &stubWallabagClient{entry: &wallabago.Item{ID: 42, Title: "An article"}}
+	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: true}}
+	fetcher := &stubArticleFetcher{article: &epub.ReadableArticle{}}
+	builder := &stubEPUBBuilder{err: errors.New("build failed")}
+	handler := NewHandler(repo, client, fetcher, builder, "https://books.example.com")
+	app := fiber.New()
+	app.Get("/opds/download/:id", handler.GetDownload)
+
+	response := performRequest(t, app, "/opds/download/42")
+	defer response.Body.Close()
+
+	if response.StatusCode != fiber.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusInternalServerError)
+	}
+}
+
+func TestGetDownloadSettingsFetchError(t *testing.T) {
+	repo := &stubSettingsRepo{settingsErr: errors.New("db unavailable")}
+	handler := NewHandler(repo, &stubWallabagClient{}, &stubArticleFetcher{}, &stubEPUBBuilder{}, "https://books.example.com")
+	app := fiber.New()
+	app.Get("/opds/download/:id", handler.GetDownload)
+
+	response := performRequest(t, app, "/opds/download/42")
+	defer response.Body.Close()
+
+	if response.StatusCode != fiber.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusInternalServerError)
 	}
 }
 

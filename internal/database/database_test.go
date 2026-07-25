@@ -65,6 +65,32 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestMigration2AddsInternalEpubBuilderColumnAndDropsSyncColumns(t *testing.T) {
+	db := newTestDB(t)
+
+	if _, err := db.Exec(
+		"INSERT INTO settings (username, use_internal_epub_builder) VALUES (?, ?)",
+		"reader", true,
+	); err != nil {
+		t.Fatalf("insert using use_internal_epub_builder column: %v", err)
+	}
+
+	var got bool
+	if err := db.Get(&got, "SELECT use_internal_epub_builder FROM settings WHERE username = ?", "reader"); err != nil {
+		t.Fatalf("read use_internal_epub_builder: %v", err)
+	}
+	if !got {
+		t.Errorf("use_internal_epub_builder = %v, want true", got)
+	}
+
+	if _, err := db.Exec("SELECT sync_interval FROM settings"); err == nil {
+		t.Error("sync_interval column still exists, want it dropped by migration 2")
+	}
+	if _, err := db.Exec("SELECT last_sync FROM settings"); err == nil {
+		t.Error("last_sync column still exists, want it dropped by migration 2")
+	}
+}
+
 func TestNewFailsOnBadPath(t *testing.T) {
 	// A path whose parent directory doesn't exist can't be opened/pinged.
 	_, err := New(filepath.Join(t.TempDir(), "no-such-dir", "test.db"))
