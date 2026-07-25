@@ -47,6 +47,16 @@ func (Client) Ping() error {
 	return nil
 }
 
+func (Client) GetEntry(id int) (*wallabago.Item, error) {
+	entry, err := wallabago.GetEntry(wallabago.APICall, id)
+
+	if err != nil {
+		return nil, fmt.Errorf("get Wallabag entry %d: %w", id, err)
+	}
+
+	return &entry, nil
+}
+
 func (Client) ExportEntry(id int, format string) ([]byte, error) {
 	epubBytes, err := wallabago.ExportEntry(wallabago.APICall, id, format)
 

@@ -7,6 +7,7 @@ import (
 
 	"buckleberry/internal/auth"
 	"buckleberry/internal/database"
+	"buckleberry/internal/epub"
 	"buckleberry/internal/onboarding"
 	"buckleberry/internal/opds"
 	"buckleberry/internal/settings"
@@ -42,6 +43,8 @@ func main() {
 
 	settingsRepo := settings.NewRepository(db)
 	wallabagClient := wallabag.NewClient()
+	articleFetcher := epub.ArticleFetcher{}
+	epubBuilder := epub.EPUBBuilder{}
 
 	isOnboarded, err := settingsRepo.IsOnboarded()
 
@@ -59,7 +62,7 @@ func main() {
 
 	authHandler := auth.NewHandler(settingsRepo)
 	settingsHandler := settings.NewHandler(settingsRepo, wallabagClient)
-	opdsHandler := opds.NewHandler(settingsRepo, wallabagClient, baseURL)
+	opdsHandler := opds.NewHandler(settingsRepo, wallabagClient, articleFetcher, epubBuilder, baseURL)
 	onboardingHandler := onboarding.NewHandler(settingsRepo, wallabagClient)
 
 	app := fiber.New()

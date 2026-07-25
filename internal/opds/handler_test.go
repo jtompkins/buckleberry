@@ -1,6 +1,7 @@
 package opds
 
 import (
+	"buckleberry/internal/settings"
 	"encoding/xml"
 	"errors"
 	"io"
@@ -41,10 +42,25 @@ type atomLink struct {
 type stubWallabagClient struct {
 	entries        *wallabago.Entries
 	entriesErr     error
+	entry          *wallabago.Item
+	entryErr       error
 	export         []byte
 	exportErr      error
 	exportedID     int
 	exportedFormat string
+}
+
+type stubSettingsRepo struct {
+	settings    *settings.Settings
+	settingsErr error
+}
+
+func (r *stubSettingsRepo) Get() (*settings.Settings, error) {
+	return r.settings, r.settingsErr
+}
+
+func (s *stubWallabagClient) GetEntry(id int) (*wallabago.Item, error) {
+	return s.entry, s.entryErr
 }
 
 func (s *stubWallabagClient) GetEntries() (*wallabago.Entries, error) {
@@ -58,7 +74,7 @@ func (s *stubWallabagClient) ExportEntry(id int, format string) ([]byte, error) 
 }
 
 func TestGetNavigationFeeds(t *testing.T) {
-	handler := NewHandler(nil, &stubWallabagClient{}, "https://books.example.com")
+	handler := NewHandler(&stubSettingsRepo{}, &stubWallabagClient{}, nil, nil, "https://books.example.com")
 	app := fiber.New()
 	app.Get("/opds", handler.GetNavigationFeeds)
 
@@ -97,7 +113,7 @@ func TestGetUnreadFeed(t *testing.T) {
 			{ID: 43, Title: "Another article", DomainName: "example.com", CreatedAt: &wallabago.WallabagTime{Time: created}},
 		}},
 	}}
-	handler := NewHandler(nil, client, "https://books.example.com")
+	handler := NewHandler(nil, client, nil, nil, "https://books.example.com")
 	app := fiber.New()
 	app.Get("/opds/unread", handler.GetUnreadFeed)
 
@@ -139,7 +155,7 @@ func TestGetUnreadFeed(t *testing.T) {
 }
 
 func TestGetUnreadFeedClientError(t *testing.T) {
-	handler := NewHandler(nil, &stubWallabagClient{entriesErr: errors.New("unavailable")}, "https://books.example.com")
+	handler := NewHandler(nil, &stubWallabagClient{entriesErr: errors.New("unavailable")}, nil, nil, "https://books.example.com")
 	app := fiber.New()
 	app.Get("/opds/unread", handler.GetUnreadFeed)
 
@@ -153,7 +169,8 @@ func TestGetUnreadFeedClientError(t *testing.T) {
 
 func TestGetDownload(t *testing.T) {
 	client := &stubWallabagClient{export: []byte("epub contents")}
-	handler := NewHandler(nil, client, "https://books.example.com")
+	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: false}}
+	handler := NewHandler(repo, client, nil, nil, "https://books.example.com")
 	app := fiber.New()
 	app.Get("/opds/download/:id", handler.GetDownload)
 
@@ -175,7 +192,8 @@ func TestGetDownload(t *testing.T) {
 }
 
 func TestGetDownloadRejectsInvalidID(t *testing.T) {
-	handler := NewHandler(nil, &stubWallabagClient{}, "https://books.example.com")
+	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: false}}
+	handler := NewHandler(repo, &stubWallabagClient{}, nil, nil, "https://books.example.com")
 	app := fiber.New()
 	app.Get("/opds/download/:id", handler.GetDownload)
 
@@ -188,8 +206,9 @@ func TestGetDownloadRejectsInvalidID(t *testing.T) {
 }
 
 func TestGetDownloadExportError(t *testing.T) {
+	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: false}}
 	client := &stubWallabagClient{exportErr: errors.New("export failed")}
-	handler := NewHandler(nil, client, "https://books.example.com")
+	handler := NewHandler(repo, client, nil, nil, "https://books.example.com")
 	app := fiber.New()
 	app.Get("/opds/download/:id", handler.GetDownload)
 
