@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"buckleberry/internal/database"
+	"buckleberry/internal/wallabag"
 )
 
 func newTestRepository(t *testing.T) *Repository {
@@ -99,13 +100,15 @@ func TestRepositoryCreateAndUpdate(t *testing.T) {
 
 func testSettings() *Settings {
 	return &Settings{
-		Username:             "reader",
-		Password:             "password",
-		WallabagInstanceURL:  "https://wallabag.example.com",
-		WallabagUsername:     "wallabag-user",
-		WallabagPassword:     "wallabag-password",
-		WallabagClientID:     "client-id",
-		WallabagClientSecret: "client-secret",
+		Username: "reader",
+		Password: "password",
+		WallabagSettings: wallabag.WallabagSettings{
+			WallabagInstanceURL:  "https://wallabag.example.com",
+			WallabagUsername:     "wallabag-user",
+			WallabagPassword:     "wallabag-password",
+			WallabagClientID:     "client-id",
+			WallabagClientSecret: "client-secret",
+		},
 	}
 }
 

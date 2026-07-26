@@ -57,7 +57,7 @@ func main() {
 			log.Fatal("getting settings: ", err.Error())
 		}
 
-		wallabagClient.Configure(currentSettings)
+		wallabagClient.Configure(&currentSettings.WallabagSettings)
 	}
 
 	authHandler := auth.NewHandler(settingsRepo)

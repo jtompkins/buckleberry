@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"buckleberry/internal/wallabag"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -31,14 +32,14 @@ func (s *stubRepo) UpdateWallabagSettings(in *Settings) (*Settings, error) {
 
 type stubWallabag struct {
 	pingErr    error
-	configured *Settings
+	configured *wallabag.WallabagSettings
 }
 
 func (s *stubWallabag) Ping() error {
 	return s.pingErr
 }
 
-func (s *stubWallabag) Configure(in *Settings) {
+func (s *stubWallabag) Configure(in *wallabag.WallabagSettings) {
 	s.configured = in
 }
 
@@ -61,7 +62,7 @@ func postForm(t *testing.T, app *fiber.App, path string, values map[string]strin
 }
 
 func TestSettingsRenders(t *testing.T) {
-	repo := &stubRepo{settings: &Settings{Username: "reader", WallabagInstanceURL: "https://wallabag.example.com"}}
+	repo := &stubRepo{settings: &Settings{Username: "reader", WallabagSettings: wallabag.WallabagSettings{WallabagInstanceURL: "https://wallabag.example.com"}}}
 	handler := NewHandler(repo, &stubWallabag{})
 
 	app := fiber.New()

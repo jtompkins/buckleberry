@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"buckleberry/internal/wallabag"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
 )
@@ -12,19 +14,19 @@ type settingsRepository interface {
 
 type wallabagClient interface {
 	Ping() error
-	Configure(*Settings)
+	Configure(*wallabag.WallabagSettings)
 }
 
 func NewHandler(settingsRepo settingsRepository, wallabag wallabagClient) *Handler {
 	return &Handler{
-		settingsRepo: settingsRepo,
-		wallabag:     wallabag,
+		settingsRepo:   settingsRepo,
+		wallabagClient: wallabag,
 	}
 }
 
 type Handler struct {
-	settingsRepo settingsRepository
-	wallabag     wallabagClient
+	settingsRepo   settingsRepository
+	wallabagClient wallabagClient
 }
 
 func (h *Handler) Settings(c fiber.Ctx) error {
@@ -35,7 +37,7 @@ func (h *Handler) Settings(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).SendString("Couldn't load settings")
 	}
 
-	connected := h.wallabag.Ping() == nil
+	connected := h.wallabagClient.Ping() == nil
 
 	c.Set("Content-Type", "text/html")
 	settingsView := SettingsView(settings, c.Redirect().Messages(), connected)
@@ -57,7 +59,7 @@ func (h *Handler) UpdateSettings(c fiber.Ctx) error {
 		return c.Redirect().With("error", "Couldn't save settings").To("/settings")
 	}
 
-	h.wallabag.Configure(&formSettings)
+	h.wallabagClient.Configure(&formSettings.WallabagSettings)
 
 	return c.Redirect().With("success", "Settings updated!").To("/settings")
 }

@@ -2,6 +2,7 @@ package onboarding
 
 import (
 	"buckleberry/internal/settings"
+	"buckleberry/internal/wallabag"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
@@ -14,7 +15,7 @@ type settingsRepo interface {
 }
 
 type wallabagConfigurer interface {
-	Configure(*settings.Settings)
+	Configure(*wallabag.WallabagSettings)
 }
 
 type Handler struct {
@@ -66,7 +67,9 @@ func (h *Handler) HandleOnboarding(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).SendString("Couldn't complete onboarding")
 	}
 
-	h.wallabag.Configure(&formSettings)
+	if formSettings.UseWallabag {
+		h.wallabag.Configure(&formSettings.WallabagSettings)
+	}
 
 	return c.Redirect().To("/settings")
 }

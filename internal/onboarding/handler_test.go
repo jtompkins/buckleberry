@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"buckleberry/internal/settings"
+	"buckleberry/internal/wallabag"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -35,10 +36,10 @@ func (s *stubOnboardingRepo) Create(in *settings.Settings) (*settings.Settings, 
 }
 
 type stubConfigurer struct {
-	configured *settings.Settings
+	configured *wallabag.WallabagSettings
 }
 
-func (s *stubConfigurer) Configure(in *settings.Settings) {
+func (s *stubConfigurer) Configure(in *wallabag.WallabagSettings) {
 	s.configured = in
 }
 
