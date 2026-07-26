@@ -8,8 +8,12 @@ package settings
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "buckleberry/internal/shared"
-import "github.com/gofiber/fiber/v3"
+import (
+	"buckleberry/internal/linkding"
+	"buckleberry/internal/shared"
+	"buckleberry/internal/wallabag"
+	"github.com/gofiber/fiber/v3"
+)
 
 func SettingsView(settings *Settings, messages []fiber.FlashMessage, goodConnection bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -61,7 +65,7 @@ func SettingsView(settings *Settings, messages []fiber.FlashMessage, goodConnect
 					var templ_7745c5c3_Var3 string
 					templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(msg.Value)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/settings/SettingsView.templ`, Line: 12, Col: 20}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/settings/SettingsView.templ`, Line: 16, Col: 20}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 					if templ_7745c5c3_Err != nil {
@@ -92,27 +96,56 @@ func SettingsView(settings *Settings, messages []fiber.FlashMessage, goodConnect
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</li></ul><form method=\"POST\" action=\"/settings\"><h2>Configuration</h2><p><label for=\"use-internal-epub-builder\">Use Internal EPUB Builder</label> <input type=\"checkbox\" name=\"use-internal-epub-builder\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</li></ul>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			data := map[string]bool{
+				"useWallabag": settings.UseWallabag,
+				"useLinkding": settings.UseLinkding,
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<form method=\"POST\" action=\"/settings\" x-data=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var4 string
+			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.JSONString(data))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/settings/SettingsView.templ`, Line: 37, Col: 72}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\"><h2>Configuration</h2><p><label for=\"use-internal-epub-builder\">Use Internal EPUB Builder</label> <input type=\"checkbox\" name=\"use-internal-epub-builder\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if settings != nil {
 				if settings.UseInternalEpubBuilder {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, " checked")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, " checked")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "></p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "></p><p><label><input type=\"checkbox\" name=\"use-wallabag\" x-model=\"useWallabag\"> Connect to Wallabag?</label></p><div id=\"wallabag-settings\" x-show=\"useWallabag\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = WallabagSettingsPartial(settings).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = wallabag.WallabagSettingsPartial(&settings.WallabagSettings).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<input type=\"submit\" value=\"Update settings\"></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div><p><label><input type=\"checkbox\" name=\"use-linkding\" x-model=\"useLinkding\"> Connect to Linkding?</label></p><div id=\"linkding-settings\" x-show=\"useLinkding\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = linkding.LinkdingSettingsPartial(&settings.LinkdingSettings).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div><input type=\"submit\" value=\"Update settings\"></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

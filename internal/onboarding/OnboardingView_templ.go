@@ -9,8 +9,10 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 import (
+	"buckleberry/internal/linkding"
 	"buckleberry/internal/settings"
 	"buckleberry/internal/shared"
+	"buckleberry/internal/wallabag"
 )
 
 func OnboardingView(settingsModel *settings.Settings, errorMsgs []string) templ.Component {
@@ -63,7 +65,7 @@ func OnboardingView(settingsModel *settings.Settings, errorMsgs []string) templ.
 					var templ_7745c5c3_Var3 string
 					templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(msg)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/onboarding/OnboardingView.templ`, Line: 16, Col: 16}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/onboarding/OnboardingView.templ`, Line: 18, Col: 16}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 					if templ_7745c5c3_Err != nil {
@@ -79,7 +81,7 @@ func OnboardingView(settingsModel *settings.Settings, errorMsgs []string) templ.
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<form method=\"POST\" action=\"/onboarding\"><h2>Authentication</h2><p><label for=\"name\">Username</label> <input type=\"text\" name=\"username\" placeholder=\"username\" required")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<form method=\"POST\" action=\"/onboarding\" x-data=\"{useWallabag: false, useLinkding: false}\"><h2>Authentication</h2><p><label for=\"name\">Username</label> <input type=\"text\" name=\"username\" placeholder=\"username\" required")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -91,7 +93,7 @@ func OnboardingView(settingsModel *settings.Settings, errorMsgs []string) templ.
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(settingsModel.Username)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/onboarding/OnboardingView.templ`, Line: 31, Col: 36}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/onboarding/OnboardingView.templ`, Line: 33, Col: 37}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 				if templ_7745c5c3_Err != nil {
@@ -102,15 +104,23 @@ func OnboardingView(settingsModel *settings.Settings, errorMsgs []string) templ.
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "></p><p><label for=\"password\">Password</label> <input type=\"password\" name=\"password\" placeholder=\"password\" required></p><p><label for=\"password\">Password</label> <input type=\"password\" name=\"password-again\" placeholder=\"repeat password\" required></p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "></p><p><label for=\"password\">Password</label> <input type=\"password\" name=\"password\" placeholder=\"password\" required></p><p><label for=\"password\">Password</label> <input type=\"password\" name=\"password-again\" placeholder=\"repeat password\" required></p><p><label><input type=\"checkbox\" name=\"use-wallabag\" x-model=\"useWallabag\"> Connect to Wallabag?</label></p><div id=\"wallabag-container\" x-show=\"useWallabag\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = settings.WallabagSettingsPartial(settingsModel).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = wallabag.WallabagSettingsPartial(nil).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<input type=\"submit\" value=\"Get Started\"></form></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div><p><label><input type=\"checkbox\" name=\"use-linkding\" x-model=\"useLinkding\"> Connect to Linkding?</label></p><div id=\"linkding-container\" x-show=\"useLinkding\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = linkding.LinkdingSettingsPartial(nil).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div><input type=\"submit\" value=\"Get Started\" x-bind:disabled=\"!useWallabag && !useLinkding\"></form></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

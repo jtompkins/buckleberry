@@ -1,0 +1,26 @@
+package linkding
+
+templ LinkdingSettingsPartial(settings *LinkdingSettings) {
+	<h2>Linkding Connection</h2>
+	<p>
+		<label for="linkding-instance-url">Instance URL</label>
+		<input
+			type="text"
+			name="linkding-instance-url"
+			placeholder="http://my-instance.linkding.com"
+			if settings != nil && settings.LinkdingInstanceURL != nil {
+				value={ *settings.LinkdingInstanceURL }
+			}
+		/>
+	</p>
+	<p>
+		<label for="linkding-api-key">Linkding API Key</label>
+		<input
+			type="text"
+			name="linkding-api-key"
+			if settings != nil && settings.LinkdingAPIKey != nil {
+				value={ *settings.LinkdingAPIKey }
+			}
+		/>
+	</p>
+}

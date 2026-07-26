@@ -1,8 +1,10 @@
 package onboarding
 
 import (
-	"buckleberry/internal/shared"
+	"buckleberry/internal/linkding"
 	"buckleberry/internal/settings"
+	"buckleberry/internal/shared"
+	"buckleberry/internal/wallabag"
 )
 
 templ OnboardingView(settingsModel *settings.Settings, errorMsgs []string) {
@@ -18,7 +20,7 @@ templ OnboardingView(settingsModel *settings.Settings, errorMsgs []string) {
 					</ul>
 				</div>
 			}
-			<form method="POST" action="/onboarding">
+			<form method="POST" action="/onboarding" x-data="{useWallabag: false, useLinkding: false}">
 				<h2>Authentication</h2>
 				<p>
 					<label for="name">Username</label>
@@ -28,7 +30,7 @@ templ OnboardingView(settingsModel *settings.Settings, errorMsgs []string) {
 						placeholder="username"
 						required
 						if settingsModel != nil {
-							value={settingsModel.Username}
+							value={ settingsModel.Username }
 						}
 					/>
 				</p>
@@ -50,8 +52,33 @@ templ OnboardingView(settingsModel *settings.Settings, errorMsgs []string) {
 						required
 					/>
 				</p>
-				@settings.WallabagSettingsPartial(settingsModel)
-				<input type="submit" value="Get Started"/>
+				<p>
+					<label>
+						<input
+							type="checkbox"
+							name="use-wallabag"
+							x-model="useWallabag"
+						/>
+						Connect to Wallabag?
+					</label>
+				</p>
+				<div id="wallabag-container" x-show="useWallabag">
+					@wallabag.WallabagSettingsPartial(nil)
+				</div>
+				<p>
+					<label>
+						<input
+							type="checkbox"
+							name="use-linkding"
+							x-model="useLinkding"
+						/>
+						Connect to Linkding?
+					</label>
+				</p>
+				<div id="linkding-container" x-show="useLinkding">
+					@linkding.LinkdingSettingsPartial(nil)
+				</div>
+				<input type="submit" value="Get Started" x-bind:disabled="!useWallabag && !useLinkding"/>
 			</form>
 		</div>
 	}

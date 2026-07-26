@@ -3,31 +3,39 @@ package wallabag
 import (
 	"fmt"
 
-	"buckleberry/internal/settings"
-
 	"github.com/Strubbl/wallabago/v9"
 )
 
-type Client struct{}
-
-func NewClient() Client {
-	return Client{}
+type Client struct {
+	config       *WallabagSettings
+	isConfigured bool
 }
 
-// Configure applies the stored Wallabag credentials to the wallabago package's
-// process-global config. Call it once at startup and again whenever the
-// settings change.
-func (Client) Configure(s *settings.Settings) {
+func NewClient() *Client {
+	return &Client{
+		isConfigured: false,
+	}
+}
+
+func (c *Client) Configure(wallabagConfig *WallabagSettings) {
+	c.config = wallabagConfig
+}
+
+func (c *Client) configureWallabago() {
 	wallabago.SetConfig(wallabago.NewWallabagConfig(
-		s.WallabagInstanceURL,
-		s.WallabagClientID,
-		s.WallabagClientSecret,
-		s.WallabagUsername,
-		s.WallabagPassword,
+		*c.config.WallabagInstanceURL,
+		*c.config.WallabagClientID,
+		*c.config.WallabagClientSecret,
+		*c.config.WallabagUsername,
+		*c.config.WallabagPassword,
 	))
 }
 
-func (Client) GetEntries() (*wallabago.Entries, error) {
+func (c *Client) GetEntries() (*wallabago.Entries, error) {
+	if !c.isConfigured {
+		c.configureWallabago()
+	}
+
 	entries, err := wallabago.GetEntries(wallabago.APICall, 0, -1, "", "", -1, -1, "", -1, -1, "metadata", "")
 
 	if err != nil {
@@ -39,7 +47,11 @@ func (Client) GetEntries() (*wallabago.Entries, error) {
 
 // Ping checks connectivity to the configured Wallabag instance by making a
 // lightweight authenticated API call.
-func (Client) Ping() error {
+func (c *Client) Ping() error {
+	if !c.isConfigured {
+		c.configureWallabago()
+	}
+
 	if _, err := wallabago.GetTags(wallabago.APICall); err != nil {
 		return fmt.Errorf("ping Wallabag: %w", err)
 	}
@@ -47,7 +59,11 @@ func (Client) Ping() error {
 	return nil
 }
 
-func (Client) GetEntry(id int) (*wallabago.Item, error) {
+func (c *Client) GetEntry(id int) (*wallabago.Item, error) {
+	if !c.isConfigured {
+		c.configureWallabago()
+	}
+
 	entry, err := wallabago.GetEntry(wallabago.APICall, id)
 
 	if err != nil {
@@ -57,7 +73,11 @@ func (Client) GetEntry(id int) (*wallabago.Item, error) {
 	return &entry, nil
 }
 
-func (Client) ExportEntry(id int, format string) ([]byte, error) {
+func (c *Client) ExportEntry(id int, format string) ([]byte, error) {
+	if !c.isConfigured {
+		c.configureWallabago()
+	}
+
 	epubBytes, err := wallabago.ExportEntry(wallabago.APICall, id, format)
 
 	if err != nil {

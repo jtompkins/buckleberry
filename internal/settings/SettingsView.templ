@@ -1,7 +1,11 @@
 package settings
 
-import "buckleberry/internal/shared"
-import "github.com/gofiber/fiber/v3"
+import (
+	"buckleberry/internal/linkding"
+	"buckleberry/internal/shared"
+	"buckleberry/internal/wallabag"
+	"github.com/gofiber/fiber/v3"
+)
 
 templ SettingsView(settings *Settings, messages []fiber.FlashMessage, goodConnection bool) {
 	@shared.Layout("Settings") {
@@ -24,7 +28,13 @@ templ SettingsView(settings *Settings, messages []fiber.FlashMessage, goodConnec
 				}
 			</li>
 		</ul>
-		<form method="POST" action="/settings">
+		{{
+			data := map[string]bool{
+				"useWallabag": settings.UseWallabag,
+				"useLinkding": settings.UseLinkding,
+			}
+		}}
+		<form method="POST" action="/settings" x-data={ templ.JSONString(data) }>
 			<h2>Configuration</h2>
 			<p>
 				<label for="use-internal-epub-builder">Use Internal EPUB Builder</label>
@@ -36,7 +46,32 @@ templ SettingsView(settings *Settings, messages []fiber.FlashMessage, goodConnec
 					}
 				/>
 			</p>
-			@WallabagSettingsPartial(settings)
+			<p>
+				<label>
+					<input
+						type="checkbox"
+						name="use-wallabag"
+						x-model="useWallabag"
+					/>
+					Connect to Wallabag?
+				</label>
+			</p>
+			<div id="wallabag-settings" x-show="useWallabag">
+				@wallabag.WallabagSettingsPartial(&settings.WallabagSettings)
+			</div>
+			<p>
+				<label>
+					<input
+						type="checkbox"
+						name="use-linkding"
+						x-model="useLinkding"
+					/>
+					Connect to Linkding?
+				</label>
+			</p>
+			<div id="linkding-settings" x-show="useLinkding">
+				@linkding.LinkdingSettingsPartial(&settings.LinkdingSettings)
+			</div>
 			<input type="submit" value="Update settings"/>
 		</form>
 	}
