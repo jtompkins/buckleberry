@@ -45,6 +45,15 @@ var migrations = []migration{
 			ALTER TABLE settings DROP COLUMN last_sync;	
 		`,
 	},
+	{
+		version: 3,
+		query: `
+			ALTER TABLE settings ADD COLUMN linkding_api_key TEXT;		
+			ALTER TABLE settings ADD COLUMN linkding_instance_url TEXT;
+			ALTER TABLE settings ADD COLUMN use_wallabag INTEGER DEFAULT TRUE;
+			ALTER TABLE settings ADD COLUMN use_linkding INTEGER DEFAULT FALSE;
+		`,
+	},
 }
 
 func New(dbPath string) (*DB, error) {

@@ -1,18 +1,19 @@
 package settings
 
 import (
+	"buckleberry/internal/linkding"
+	"buckleberry/internal/wallabag"
 	"time"
 )
 
 type Settings struct {
-	ID                     int       `db:"id"`
-	Username               string    `form:"username" db:"username"`
-	Password               string    `form:"password" db:"password"`
-	WallabagInstanceURL    string    `form:"wallabag-url" db:"wallabag_instance_url"`
-	WallabagUsername       string    `form:"wallabag-username" db:"wallabag_username"`
-	WallabagPassword       string    `form:"wallabag-password" db:"wallabag_password"`
-	WallabagClientID       string    `form:"wallabag-client-id" db:"wallabag_client_id"`
-	WallabagClientSecret   string    `form:"wallabag-client-secret" db:"wallabag_client_secret"`
+	ID          int    `db:"id"`
+	Username    string `form:"username" db:"username"`
+	Password    string `form:"password" db:"password"`
+	UseWallabag bool   `form:"use-wallabag" db:"use_wallabag"`
+	wallabag.WallabagSettings
+	UseLinkding bool `form:"use-linkding" db:"use_linkding"`
+	linkding.LinkdingSettings
 	UseInternalEpubBuilder bool      `form:"use-internal-epub-builder" db:"use_internal_epub_builder"`
 	CreatedAt              time.Time `db:"created_at"`
 	UpdatedAt              time.Time `db:"updated_at"`
