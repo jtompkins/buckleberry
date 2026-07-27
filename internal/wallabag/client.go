@@ -32,6 +32,10 @@ func (c *Client) configureWallabago() {
 }
 
 func (c *Client) GetEntries() (*wallabago.Entries, error) {
+	if c.config == nil {
+		return nil, fmt.Errorf("client not configured, please call Configure() first")
+	}
+
 	if !c.isConfigured {
 		c.configureWallabago()
 	}
@@ -48,6 +52,10 @@ func (c *Client) GetEntries() (*wallabago.Entries, error) {
 // Ping checks connectivity to the configured Wallabag instance by making a
 // lightweight authenticated API call.
 func (c *Client) Ping() error {
+	if c.config == nil {
+		return fmt.Errorf("client not configured, please call Configure() first")
+	}
+
 	if !c.isConfigured {
 		c.configureWallabago()
 	}
@@ -60,6 +68,10 @@ func (c *Client) Ping() error {
 }
 
 func (c *Client) GetEntry(id int) (*wallabago.Item, error) {
+	if c.config == nil {
+		return nil, fmt.Errorf("client not configured, please call Configure() first")
+	}
+
 	if !c.isConfigured {
 		c.configureWallabago()
 	}
@@ -74,6 +86,10 @@ func (c *Client) GetEntry(id int) (*wallabago.Item, error) {
 }
 
 func (c *Client) ExportEntry(id int, format string) ([]byte, error) {
+	if c.config == nil {
+		return nil, fmt.Errorf("client not configured, please call Configure() first")
+	}
+
 	if !c.isConfigured {
 		c.configureWallabago()
 	}
