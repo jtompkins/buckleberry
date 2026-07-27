@@ -8,6 +8,7 @@ import (
 	"buckleberry/internal/auth"
 	"buckleberry/internal/database"
 	"buckleberry/internal/epub"
+	"buckleberry/internal/linkding"
 	"buckleberry/internal/onboarding"
 	"buckleberry/internal/opds"
 	"buckleberry/internal/settings"
@@ -43,6 +44,7 @@ func main() {
 
 	settingsRepo := settings.NewRepository(db)
 	wallabagClient := wallabag.NewClient()
+	linkdingClient := linkding.NewClient()
 	articleFetcher := epub.ArticleFetcher{}
 	epubBuilder := epub.EPUBBuilder{}
 
@@ -57,12 +59,18 @@ func main() {
 			log.Fatal("getting settings: ", err.Error())
 		}
 
-		wallabagClient.Configure(&currentSettings.WallabagSettings)
+		if currentSettings.UseWallabag {
+			wallabagClient.Configure(&currentSettings.WallabagSettings)
+		}
+
+		if currentSettings.UseLinkding {
+			linkdingClient.Configure(&currentSettings.LinkdingSettings)
+		}
 	}
 
 	authHandler := auth.NewHandler(settingsRepo)
-	settingsHandler := settings.NewHandler(settingsRepo, wallabagClient)
-	opdsHandler := opds.NewHandler(settingsRepo, wallabagClient, articleFetcher, epubBuilder, baseURL)
+	settingsHandler := settings.NewHandler(settingsRepo, wallabagClient, linkdingClient)
+	opdsHandler := opds.NewHandler(settingsRepo, wallabagClient, linkdingClient, articleFetcher, epubBuilder, baseURL)
 	onboardingHandler := onboarding.NewHandler(settingsRepo, wallabagClient)
 
 	app := fiber.New()
@@ -96,8 +104,10 @@ func main() {
 	opds := app.Group("/opds", onboardingMiddleware.RequireOnboarded, basicAuthMiddleware)
 
 	opds.Get("/", opdsHandler.GetNavigationFeeds)
-	opds.Get("/unread", opdsHandler.GetUnreadFeed)
-	opds.Get("/download/:id", opdsHandler.GetDownload)
+	opds.Get("/wallabag/", opdsHandler.GetUnreadWallabagFeed)
+	opds.Get("/wallabag/:id", opdsHandler.GetWallabagDownload)
+	opds.Get("/linkding/", opdsHandler.GetUnreadLinkdingFeed)
+	opds.Get("/linkding/:id", opdsHandler.GetLinkdingDownload)
 
 	port := viper.GetString("PORT")
 	log.Fatal(app.Listen(":" + port))
