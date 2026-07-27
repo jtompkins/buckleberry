@@ -19,6 +19,10 @@ func NewClient() *Client {
 
 func (c *Client) Configure(wallabagConfig *WallabagSettings) {
 	c.config = wallabagConfig
+
+	// New credentials haven't reached wallabago's global config yet, so the
+	// next call has to push them through again.
+	c.isConfigured = false
 }
 
 func (c *Client) configureWallabago() {
@@ -29,6 +33,8 @@ func (c *Client) configureWallabago() {
 		*c.config.WallabagUsername,
 		*c.config.WallabagPassword,
 	))
+
+	c.isConfigured = true
 }
 
 func (c *Client) GetEntries() (*wallabago.Entries, error) {

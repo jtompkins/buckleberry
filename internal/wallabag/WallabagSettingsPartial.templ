@@ -1,65 +1,97 @@
 package wallabag
 
 templ WallabagSettingsPartial(settings *WallabagSettings) {
-	<h2>Wallabag Connection</h2>
-	<p>
-		<label for="wallabag-url">Instance URL</label>
-		<input
-			type="text"
-			name="wallabag-url"
-			placeholder="http://my-instance.wallabag.com"
-			required
-			if settings != nil && settings.WallabagInstanceURL != nil {
-				value={ *settings.WallabagInstanceURL }
-			}
-		/>
-	</p>
-	<p>
-		<label for="wallabag-username">Username</label>
-		<input
-			type="text"
-			name="wallabag-username"
-			placeholder="username"
-			required
-			if settings != nil && settings.WallabagUsername != nil {
-				value={ *settings.WallabagUsername }
-			}
-		/>
-	</p>
-	<p>
-		<label for="wallabag-password">Password</label>
-		<input
-			type="password"
-			name="wallabag-password"
-			placeholder="password"
-			required
-			if settings != nil && settings.WallabagPassword != nil {
-				value={ *settings.WallabagPassword }
-			}
-		/>
-	</p>
-	<p>
-		<label for="wallabag-client-id">Client ID</label>
-		<input
-			type="text"
-			name="wallabag-client-id"
-			placeholder="client id"
-			required
-			if settings != nil && settings.WallabagClientID != nil {
-				value={ *settings.WallabagClientID }
-			}
-		/>
-	</p>
-	<p>
-		<label for="wallabag-client-secret">Client Secret</label>
-		<input
-			type="password"
-			name="wallabag-client-secret"
-			placeholder="client secret"
-			required
-			if settings != nil && settings.WallabagClientSecret != nil {
-				value={ *settings.WallabagClientSecret }
-			}
-		/>
-	</p>
+	{{
+		// Onboarding renders this partial with no settings to show yet.
+		data := map[string]bool{
+			"useWallabag": settings != nil && settings.UseWallabag,
+		}
+	}}
+	<div id="wallabag-settings" x-data={ templ.JSONString(data) }>
+		<h2>Wallabag Connection</h2>
+		<p>
+			<label>
+				<input
+					type="checkbox"
+					name="use-wallabag"
+					x-model="useWallabag"
+				/>
+				Connect to Wallabag?
+			</label>
+		</p>
+		<div x-show="useWallabag">
+			<p>
+				<label for="wallabag-url">Instance URL</label>
+				<input
+					type="text"
+					name="wallabag-url"
+					placeholder="http://my-instance.wallabag.com"
+					x-bind:required="useWallabag"
+					if settings != nil && settings.WallabagInstanceURL != nil {
+						value={ *settings.WallabagInstanceURL }
+					}
+				/>
+			</p>
+			<p>
+				<label for="wallabag-username">Username</label>
+				<input
+					type="text"
+					name="wallabag-username"
+					placeholder="username"
+					x-bind:required="useWallabag"
+					if settings != nil && settings.WallabagUsername != nil {
+						value={ *settings.WallabagUsername }
+					}
+				/>
+			</p>
+			<p>
+				<label for="wallabag-password">Password</label>
+				<input
+					type="password"
+					name="wallabag-password"
+					placeholder="password"
+					x-bind:required="useWallabag"
+					if settings != nil && settings.WallabagPassword != nil {
+						value={ *settings.WallabagPassword }
+					}
+				/>
+			</p>
+			<p>
+				<label for="wallabag-client-id">Client ID</label>
+				<input
+					type="text"
+					name="wallabag-client-id"
+					placeholder="client id"
+					x-bind:required="useWallabag"
+					if settings != nil && settings.WallabagClientID != nil {
+						value={ *settings.WallabagClientID }
+					}
+				/>
+			</p>
+			<p>
+				<label for="wallabag-client-secret">Client Secret</label>
+				<input
+					type="password"
+					name="wallabag-client-secret"
+					placeholder="client secret"
+					x-bind:required="useWallabag"
+					if settings != nil && settings.WallabagClientSecret != nil {
+						value={ *settings.WallabagClientSecret }
+					}
+				/>
+			</p>
+			<p>
+				<label>
+					<input
+						type="checkbox"
+						name="use-internal-epub-builder"
+						if settings != nil {
+							checked?={ settings.UseInternalEpubBuilder }
+						}
+					/>
+					Use Internal EPUB Builder
+				</label>
+			</p>
+		</div>
+	</div>
 }
