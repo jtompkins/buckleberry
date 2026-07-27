@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"buckleberry/internal/linkding"
 	"buckleberry/internal/wallabag"
 
 	"github.com/gofiber/fiber/v3"
@@ -9,7 +10,7 @@ import (
 
 type settingsRepository interface {
 	Get() (*Settings, error)
-	UpdateWallabagSettings(*Settings) (*Settings, error)
+	Update(*Settings) (*Settings, error)
 }
 
 type wallabagClient interface {
@@ -17,11 +18,12 @@ type wallabagClient interface {
 	Configure(*wallabag.WallabagSettings)
 }
 
-type linkdingPinger interface {
+type linkdingClient interface {
 	Ping() error
+	Configure(*linkding.LinkdingSettings)
 }
 
-func NewHandler(settingsRepo settingsRepository, wallabag wallabagClient, linkding linkdingPinger) *Handler {
+func NewHandler(settingsRepo settingsRepository, wallabag wallabagClient, linkding linkdingClient) *Handler {
 	return &Handler{
 		settingsRepo:   settingsRepo,
 		wallabagClient: wallabag,
@@ -32,7 +34,7 @@ func NewHandler(settingsRepo settingsRepository, wallabag wallabagClient, linkdi
 type Handler struct {
 	settingsRepo   settingsRepository
 	wallabagClient wallabagClient
-	linkdingClient linkdingPinger
+	linkdingClient linkdingClient
 }
 
 func (h *Handler) Settings(c fiber.Ctx) error {
@@ -43,8 +45,8 @@ func (h *Handler) Settings(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).SendString("Couldn't load settings")
 	}
 
-	wallabagConnected := h.wallabagClient.Ping() == nil
-	linkdingConnected := h.linkdingClient.Ping() == nil
+	wallabagConnected := settings.UseWallabag && h.wallabagClient.Ping() == nil
+	linkdingConnected := settings.UseLinkding && h.linkdingClient.Ping() == nil
 
 	c.Set("Content-Type", "text/html")
 	settingsView := SettingsView(settings, c.Redirect().Messages(), wallabagConnected, linkdingConnected)
@@ -59,14 +61,19 @@ func (h *Handler) UpdateSettings(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).SendString("Invalid form submission")
 	}
 
-	_, err := h.settingsRepo.UpdateWallabagSettings(&formSettings)
+	_, err := h.settingsRepo.Update(&formSettings)
 
 	if err != nil {
 		log.Error("update settings: ", err)
 		return c.Redirect().With("error", "Couldn't save settings").To("/settings")
 	}
 
-	h.wallabagClient.Configure(&formSettings.WallabagSettings)
+	if formSettings.UseWallabag {
+		h.wallabagClient.Configure(&formSettings.WallabagSettings)
+	}
 
+	if formSettings.UseLinkding {
+		h.linkdingClient.Configure(&formSettings.LinkdingSettings)
+	}
 	return c.Redirect().With("success", "Settings updated!").To("/settings")
 }

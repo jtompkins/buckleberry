@@ -24,7 +24,7 @@ func (s *stubRepo) Get() (*Settings, error) {
 	return s.settings, s.getErr
 }
 
-func (s *stubRepo) UpdateWallabagSettings(in *Settings) (*Settings, error) {
+func (s *stubRepo) Update(in *Settings) (*Settings, error) {
 	s.updated = in
 	if s.updateErr != nil {
 		return nil, s.updateErr
@@ -77,7 +77,7 @@ func postForm(t *testing.T, app *fiber.App, path string, values map[string]strin
 }
 
 func TestSettingsRenders(t *testing.T) {
-	repo := &stubRepo{settings: &Settings{Username: "reader", WallabagSettings: wallabag.WallabagSettings{WallabagInstanceURL: strptr("https://wallabag.example.com")}}}
+	repo := &stubRepo{settings: &Settings{Username: "reader", WallabagSettings: wallabag.WallabagSettings{UseWallabag: true, WallabagInstanceURL: strptr("https://wallabag.example.com")}}}
 	handler := NewHandler(repo, &stubWallabag{}, &stubLinkding{})
 
 	app := fiber.New()
@@ -156,7 +156,7 @@ func TestUpdateSettingsSuccess(t *testing.T) {
 		t.Errorf("redirect = %q, want /settings", loc)
 	}
 	if repo.updated == nil {
-		t.Fatal("UpdateWallabagSettings() was not called")
+		t.Fatal("Update() was not called")
 	}
 	if repo.updated.WallabagInstanceURL == nil || *repo.updated.WallabagInstanceURL != "https://new.example.com" {
 		t.Errorf("updated URL = %v, want the submitted URL", repo.updated.WallabagInstanceURL)
@@ -198,7 +198,11 @@ func TestSettingsRendersConnectionStatus(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			repo := &stubRepo{settings: &Settings{Username: "reader"}}
+			repo := &stubRepo{settings: &Settings{
+				Username:         "reader",
+				WallabagSettings: wallabag.WallabagSettings{UseWallabag: true},
+				LinkdingSettings: linkding.LinkdingSettings{UseLinkding: true},
+			}}
 			handler := NewHandler(repo, &stubWallabag{pingErr: tc.wallabagPingErr}, &stubLinkding{pingErr: tc.linkdingPingErr})
 
 			app := fiber.New()
@@ -251,8 +255,8 @@ func statusAfter(t *testing.T, html, label string) string {
 
 func TestSettingsRendersExistingLinkdingSettings(t *testing.T) {
 	repo := &stubRepo{settings: &Settings{
-		UseLinkding: true,
 		LinkdingSettings: linkding.LinkdingSettings{
+			UseLinkding:         true,
 			LinkdingInstanceURL: strptr("https://linkding.example.com"),
 			LinkdingAPIKey:      strptr("linkding-key"),
 		},
@@ -319,7 +323,7 @@ func TestUpdateSettingsPersistsLinkdingSettings(t *testing.T) {
 		t.Fatalf("status = %d, want %d", res.StatusCode, fiber.StatusSeeOther)
 	}
 	if repo.updated == nil {
-		t.Fatal("UpdateWallabagSettings() was not called")
+		t.Fatal("Update() was not called")
 	}
 	if !repo.updated.UseLinkding {
 		t.Error("updated UseLinkding = false, want the submitted checkbox to enable Linkding")
@@ -344,12 +348,78 @@ func TestUpdateSettingsUncheckedBoxesDisableSources(t *testing.T) {
 	defer res.Body.Close()
 
 	if repo.updated == nil {
-		t.Fatal("UpdateWallabagSettings() was not called")
+		t.Fatal("Update() was not called")
 	}
 	if repo.updated.UseWallabag {
 		t.Error("updated UseWallabag = true, want false when the box is unchecked")
 	}
 	if repo.updated.UseLinkding {
 		t.Error("updated UseLinkding = true, want false when the box is unchecked")
+	}
+}
+
+// Saving settings must push the new credentials into the live clients,
+// otherwise the change doesn't take effect until the process restarts.
+func TestUpdateSettingsReconfiguresEnabledClients(t *testing.T) {
+	repo := &stubRepo{}
+	wallabagClient := &stubWallabag{}
+	linkdingClient := &stubLinkding{}
+	handler := NewHandler(repo, wallabagClient, linkdingClient)
+
+	app := fiber.New()
+	app.Post("/settings", handler.UpdateSettings)
+
+	res := postForm(t, app, "/settings", map[string]string{
+		"use-wallabag":           "on",
+		"wallabag-url":           "https://new.example.com",
+		"wallabag-username":      "new-user",
+		"wallabag-password":      "new-pass",
+		"wallabag-client-id":     "new-id",
+		"wallabag-client-secret": "new-secret",
+		"use-linkding":           "on",
+		"linkding-instance-url":  "https://linkding.example.com",
+		"linkding-api-key":       "linkding-key",
+	})
+	defer res.Body.Close()
+
+	if wallabagClient.configured == nil {
+		t.Fatal("Configure() was not called on the Wallabag client")
+	}
+	if wallabagClient.configured.WallabagInstanceURL == nil ||
+		*wallabagClient.configured.WallabagInstanceURL != "https://new.example.com" {
+		t.Errorf("Wallabag configured with %v, want the submitted URL", wallabagClient.configured.WallabagInstanceURL)
+	}
+
+	if linkdingClient.configured == nil {
+		t.Fatal("Configure() was not called on the Linkding client")
+	}
+	if linkdingClient.configured.LinkdingInstanceURL == nil ||
+		*linkdingClient.configured.LinkdingInstanceURL != "https://linkding.example.com" {
+		t.Errorf("Linkding configured with %v, want the submitted URL", linkdingClient.configured.LinkdingInstanceURL)
+	}
+}
+
+// A disabled source must not have credentials pushed into its client.
+func TestUpdateSettingsSkipsConfigureForDisabledSources(t *testing.T) {
+	repo := &stubRepo{}
+	wallabagClient := &stubWallabag{}
+	linkdingClient := &stubLinkding{}
+	handler := NewHandler(repo, wallabagClient, linkdingClient)
+
+	app := fiber.New()
+	app.Post("/settings", handler.UpdateSettings)
+
+	res := postForm(t, app, "/settings", map[string]string{
+		"use-linkding":          "on",
+		"linkding-instance-url": "https://linkding.example.com",
+		"linkding-api-key":      "linkding-key",
+	})
+	defer res.Body.Close()
+
+	if wallabagClient.configured != nil {
+		t.Error("Configure() was called on the Wallabag client, which is disabled")
+	}
+	if linkdingClient.configured == nil {
+		t.Error("Configure() was not called on the enabled Linkding client")
 	}
 }

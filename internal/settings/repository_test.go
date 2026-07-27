@@ -82,8 +82,8 @@ func TestRepositoryCreateAndUpdate(t *testing.T) {
 		t.Error("Create() did not populate database timestamps")
 	}
 
-	// UpdateWallabagSettings only touches the wallabag_* columns; the app
-	// username/password are intentionally left untouched.
+	// Update touches the integration columns; the app username/password are
+	// intentionally left untouched.
 	updatedValues := *created
 	updatedValues.WallabagInstanceURL = strptr("https://new.example.com")
 	updatedValues.WallabagUsername = strptr("new-wallabag-user")
@@ -92,36 +92,37 @@ func TestRepositoryCreateAndUpdate(t *testing.T) {
 	updatedValues.WallabagClientSecret = strptr("new-client-secret")
 	updatedValues.UseWallabag = false
 	updatedValues.UseLinkding = true
+	updatedValues.UseInternalEpubBuilder = true
 	updatedValues.LinkdingInstanceURL = strptr("https://new-linkding.example.com")
 	updatedValues.LinkdingAPIKey = strptr("new-linkding-key")
 
-	updated, err := repo.UpdateWallabagSettings(&updatedValues)
+	updated, err := repo.Update(&updatedValues)
 	if err != nil {
-		t.Fatalf("UpdateWallabagSettings() error = %v", err)
+		t.Fatalf("Update() error = %v", err)
 	}
 	assertSettingsFields(t, updated, &updatedValues)
 
 	// The credentials the update doesn't manage must be preserved.
 	if updated.Username != created.Username || updated.Password != created.Password {
-		t.Errorf("UpdateWallabagSettings() changed app credentials: got user=%q pass=%q, want user=%q pass=%q",
+		t.Errorf("Update() changed app credentials: got user=%q pass=%q, want user=%q pass=%q",
 			updated.Username, updated.Password, created.Username, created.Password)
 	}
 }
 
 func testSettings() *Settings {
 	return &Settings{
-		Username:    "reader",
-		Password:    "password",
-		UseWallabag: true,
+		Username: "reader",
+		Password: "password",
 		WallabagSettings: wallabag.WallabagSettings{
+			UseWallabag:          true,
 			WallabagInstanceURL:  strptr("https://wallabag.example.com"),
 			WallabagUsername:     strptr("wallabag-user"),
 			WallabagPassword:     strptr("wallabag-password"),
 			WallabagClientID:     strptr("client-id"),
 			WallabagClientSecret: strptr("client-secret"),
 		},
-		UseLinkding: true,
 		LinkdingSettings: linkding.LinkdingSettings{
+			UseLinkding:         true,
 			LinkdingInstanceURL: strptr("https://linkding.example.com"),
 			LinkdingAPIKey:      strptr("linkding-key"),
 		},
@@ -139,6 +140,9 @@ func assertSettingsFields(t *testing.T, got, want *Settings) {
 	}
 	if got.UseLinkding != want.UseLinkding {
 		t.Errorf("UseLinkding = %v, want %v", got.UseLinkding, want.UseLinkding)
+	}
+	if got.UseInternalEpubBuilder != want.UseInternalEpubBuilder {
+		t.Errorf("UseInternalEpubBuilder = %v, want %v", got.UseInternalEpubBuilder, want.UseInternalEpubBuilder)
 	}
 
 	fields := []struct {

@@ -19,67 +19,31 @@ templ SettingsView(settings *Settings, messages []fiber.FlashMessage, wallabagCo
 		}
 		<h2>Status</h2>
 		<ul>
-			<li>
-				<strong>Wallabag connection:</strong>
-				if wallabagConnected {
-					<span style="color: green">✅</span>
-				} else {
-					<span style="color: red">❌</span>
-				}
-			</li>
-			<li>
-				<strong>Linkding connection:</strong>
-				if linkdingConnected {
-					<span style="color: green">✅</span>
-				} else {
-					<span style="color: red">❌</span>
-				}
-			</li>
-		</ul>
-		{{
-			data := map[string]bool{
-				"useWallabag": settings.UseWallabag,
-				"useLinkding": settings.UseLinkding,
-			}
-		}}
-		<form method="POST" action="/settings" x-data={ templ.JSONString(data) }>
-			<h2>Configuration</h2>
-			<p>
-				<label for="use-internal-epub-builder">Use Internal EPUB Builder</label>
-				<input
-					type="checkbox"
-					name="use-internal-epub-builder"
-					if settings != nil {
-						checked?={ settings.UseInternalEpubBuilder }
+			if settings.UseWallabag {
+				<li>
+					<strong>Wallabag connection:</strong>
+					if wallabagConnected {
+						<span style="color: green">✅</span>
+					} else {
+						<span style="color: red">❌</span>
 					}
-				/>
-			</p>
-			<p>
-				<label>
-					<input
-						type="checkbox"
-						name="use-wallabag"
-						x-model="useWallabag"
-					/>
-					Connect to Wallabag?
-				</label>
-			</p>
-			<div id="wallabag-settings" x-show="useWallabag">
-				@wallabag.WallabagSettingsPartial(&settings.WallabagSettings)
-			</div>
-			<p>
-				<label>
-					<input
-						type="checkbox"
-						name="use-linkding"
-						x-model="useLinkding"
-					/>
-					Connect to Linkding?
-				</label>
-			</p>
-			<div id="linkding-settings" x-show="useLinkding">
-				@linkding.LinkdingSettingsPartial(&settings.LinkdingSettings)
-			</div>
+				</li>
+			}
+			if settings.UseLinkding {
+				<li>
+					<strong>Linkding connection:</strong>
+					if linkdingConnected {
+						<span style="color: green">✅</span>
+					} else {
+						<span style="color: red">❌</span>
+					}
+				</li>
+			}
+		</ul>
+		<form method="POST" action="/settings">
+			<h2>Configuration</h2>
+			@wallabag.WallabagSettingsPartial(&settings.WallabagSettings)
+			@linkding.LinkdingSettingsPartial(&settings.LinkdingSettings)
 			<input type="submit" value="Update settings"/>
 		</form>
 	}

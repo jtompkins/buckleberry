@@ -71,7 +71,7 @@ func main() {
 	authHandler := auth.NewHandler(settingsRepo)
 	settingsHandler := settings.NewHandler(settingsRepo, wallabagClient, linkdingClient)
 	opdsHandler := opds.NewHandler(settingsRepo, wallabagClient, linkdingClient, articleFetcher, epubBuilder, baseURL)
-	onboardingHandler := onboarding.NewHandler(settingsRepo, wallabagClient)
+	onboardingHandler := onboarding.NewHandler(settingsRepo, wallabagClient, linkdingClient)
 
 	app := fiber.New()
 
@@ -104,10 +104,10 @@ func main() {
 	opds := app.Group("/opds", onboardingMiddleware.RequireOnboarded, basicAuthMiddleware)
 
 	opds.Get("/", opdsHandler.GetNavigationFeeds)
-	opds.Get("/wallabag/", opdsHandler.GetUnreadWallabagFeed)
-	opds.Get("/wallabag/:id", opdsHandler.GetWallabagDownload)
-	opds.Get("/linkding/", opdsHandler.GetUnreadLinkdingFeed)
-	opds.Get("/linkding/:id", opdsHandler.GetLinkdingDownload)
+	opds.Get("/wallabag/", opdsHandler.RequireWallabag, opdsHandler.GetUnreadWallabagFeed)
+	opds.Get("/wallabag/:id", opdsHandler.RequireWallabag, opdsHandler.GetWallabagDownload)
+	opds.Get("/linkding/", opdsHandler.RequireLinkding, opdsHandler.GetUnreadLinkdingFeed)
+	opds.Get("/linkding/:id", opdsHandler.RequireLinkding, opdsHandler.GetLinkdingDownload)
 
 	port := viper.GetString("PORT")
 	log.Fatal(app.Listen(":" + port))
