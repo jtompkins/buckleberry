@@ -91,6 +91,62 @@ func TestMigration2AddsInternalEpubBuilderColumnAndDropsSyncColumns(t *testing.T
 	}
 }
 
+func TestMigration3AddsLinkdingAndSourceToggleColumns(t *testing.T) {
+	db := newTestDB(t)
+
+	if _, err := db.Exec(
+		"INSERT INTO settings (username, use_wallabag, use_linkding, linkding_instance_url, linkding_api_key) VALUES (?, ?, ?, ?, ?)",
+		"reader", false, true, "https://linkding.example.com", "linkding-key",
+	); err != nil {
+		t.Fatalf("insert using migration 3 columns: %v", err)
+	}
+
+	var got struct {
+		UseWallabag bool   `db:"use_wallabag"`
+		UseLinkding bool   `db:"use_linkding"`
+		URL         string `db:"linkding_instance_url"`
+		APIKey      string `db:"linkding_api_key"`
+	}
+	if err := db.Get(&got,
+		"SELECT use_wallabag, use_linkding, linkding_instance_url, linkding_api_key FROM settings WHERE username = ?",
+		"reader",
+	); err != nil {
+		t.Fatalf("read migration 3 columns: %v", err)
+	}
+
+	if got.UseWallabag || !got.UseLinkding {
+		t.Errorf("use_wallabag/use_linkding = %v/%v, want false/true", got.UseWallabag, got.UseLinkding)
+	}
+	if got.URL != "https://linkding.example.com" || got.APIKey != "linkding-key" {
+		t.Errorf("linkding settings = %q/%q, want the inserted values", got.URL, got.APIKey)
+	}
+}
+
+// Rows that predate migration 3 keep working with Wallabag on, which is the
+// only source those installs could have been using.
+func TestMigration3DefaultsPreserveExistingWallabagUsers(t *testing.T) {
+	db := newTestDB(t)
+
+	if _, err := db.Exec("INSERT INTO settings (username) VALUES (?)", "existing"); err != nil {
+		t.Fatalf("insert row without the new columns: %v", err)
+	}
+
+	var useWallabag, useLinkding bool
+	if err := db.Get(&useWallabag, "SELECT use_wallabag FROM settings WHERE username = ?", "existing"); err != nil {
+		t.Fatalf("read use_wallabag: %v", err)
+	}
+	if err := db.Get(&useLinkding, "SELECT use_linkding FROM settings WHERE username = ?", "existing"); err != nil {
+		t.Fatalf("read use_linkding: %v", err)
+	}
+
+	if !useWallabag {
+		t.Error("use_wallabag defaulted to false, want true so existing installs keep their feed")
+	}
+	if useLinkding {
+		t.Error("use_linkding defaulted to true, want false")
+	}
+}
+
 func TestNewFailsOnBadPath(t *testing.T) {
 	// A path whose parent directory doesn't exist can't be opened/pinged.
 	_, err := New(filepath.Join(t.TempDir(), "no-such-dir", "test.db"))

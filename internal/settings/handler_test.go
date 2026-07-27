@@ -1,8 +1,10 @@
 package settings
 
 import (
+	"buckleberry/internal/linkding"
 	"buckleberry/internal/wallabag"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -35,6 +37,19 @@ type stubWallabag struct {
 	configured *wallabag.WallabagSettings
 }
 
+type stubLinkding struct {
+	pingErr    error
+	configured *linkding.LinkdingSettings
+}
+
+func (s *stubLinkding) Ping() error {
+	return s.pingErr
+}
+
+func (s *stubLinkding) Configure(in *linkding.LinkdingSettings) {
+	s.configured = in
+}
+
 func (s *stubWallabag) Ping() error {
 	return s.pingErr
 }
@@ -62,8 +77,8 @@ func postForm(t *testing.T, app *fiber.App, path string, values map[string]strin
 }
 
 func TestSettingsRenders(t *testing.T) {
-	repo := &stubRepo{settings: &Settings{Username: "reader", WallabagSettings: wallabag.WallabagSettings{WallabagInstanceURL: "https://wallabag.example.com"}}}
-	handler := NewHandler(repo, &stubWallabag{})
+	repo := &stubRepo{settings: &Settings{Username: "reader", WallabagSettings: wallabag.WallabagSettings{WallabagInstanceURL: strptr("https://wallabag.example.com")}}}
+	handler := NewHandler(repo, &stubWallabag{}, &stubLinkding{})
 
 	app := fiber.New()
 	app.Get("/settings", handler.Settings)
@@ -83,7 +98,7 @@ func TestSettingsRenders(t *testing.T) {
 }
 
 func TestSettingsRepoError(t *testing.T) {
-	handler := NewHandler(&stubRepo{getErr: errors.New("db down")}, &stubWallabag{})
+	handler := NewHandler(&stubRepo{getErr: errors.New("db down")}, &stubWallabag{}, &stubLinkding{})
 
 	app := fiber.New()
 	app.Get("/settings", handler.Settings)
@@ -102,7 +117,7 @@ func TestSettingsRepoError(t *testing.T) {
 // A failing Ping must not fail the page; it just renders as "not connected".
 func TestSettingsRendersWhenWallabagUnreachable(t *testing.T) {
 	repo := &stubRepo{settings: &Settings{}}
-	handler := NewHandler(repo, &stubWallabag{pingErr: errors.New("unreachable")})
+	handler := NewHandler(repo, &stubWallabag{pingErr: errors.New("unreachable")}, &stubLinkding{pingErr: errors.New("unreachable")})
 
 	app := fiber.New()
 	app.Get("/settings", handler.Settings)
@@ -120,7 +135,7 @@ func TestSettingsRendersWhenWallabagUnreachable(t *testing.T) {
 
 func TestUpdateSettingsSuccess(t *testing.T) {
 	repo := &stubRepo{}
-	handler := NewHandler(repo, &stubWallabag{})
+	handler := NewHandler(repo, &stubWallabag{}, &stubLinkding{})
 
 	app := fiber.New()
 	app.Post("/settings", handler.UpdateSettings)
@@ -143,14 +158,14 @@ func TestUpdateSettingsSuccess(t *testing.T) {
 	if repo.updated == nil {
 		t.Fatal("UpdateWallabagSettings() was not called")
 	}
-	if repo.updated.WallabagInstanceURL != "https://new.example.com" {
-		t.Errorf("updated URL = %q, want the submitted URL", repo.updated.WallabagInstanceURL)
+	if repo.updated.WallabagInstanceURL == nil || *repo.updated.WallabagInstanceURL != "https://new.example.com" {
+		t.Errorf("updated URL = %v, want the submitted URL", repo.updated.WallabagInstanceURL)
 	}
 }
 
 func TestUpdateSettingsError(t *testing.T) {
 	repo := &stubRepo{updateErr: errors.New("write failed")}
-	handler := NewHandler(repo, &stubWallabag{})
+	handler := NewHandler(repo, &stubWallabag{}, &stubLinkding{})
 
 	app := fiber.New()
 	app.Post("/settings", handler.UpdateSettings)
@@ -164,5 +179,177 @@ func TestUpdateSettingsError(t *testing.T) {
 	}
 	if loc := res.Header.Get("Location"); loc != "/settings" {
 		t.Errorf("redirect = %q, want /settings", loc)
+	}
+}
+
+// The rendered page reports each integration's reachability independently.
+func TestSettingsRendersConnectionStatus(t *testing.T) {
+	tests := []struct {
+		name              string
+		wallabagPingErr   error
+		linkdingPingErr   error
+		wantWallabagState string
+		wantLinkdingState string
+	}{
+		{name: "both reachable", wantWallabagState: "✅", wantLinkdingState: "✅"},
+		{name: "wallabag down", wallabagPingErr: errors.New("unreachable"), wantWallabagState: "❌", wantLinkdingState: "✅"},
+		{name: "linkding down", linkdingPingErr: errors.New("unreachable"), wantWallabagState: "✅", wantLinkdingState: "❌"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &stubRepo{settings: &Settings{Username: "reader"}}
+			handler := NewHandler(repo, &stubWallabag{pingErr: tc.wallabagPingErr}, &stubLinkding{pingErr: tc.linkdingPingErr})
+
+			app := fiber.New()
+			app.Get("/settings", handler.Settings)
+
+			res, err := app.Test(httptest.NewRequest(http.MethodGet, "/settings", nil))
+			if err != nil {
+				t.Fatalf("GET /settings: %v", err)
+			}
+			defer res.Body.Close()
+
+			body, err := io.ReadAll(res.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			html := string(body)
+
+			wallabagStatus := statusAfter(t, html, "Wallabag connection:")
+			if wallabagStatus != tc.wantWallabagState {
+				t.Errorf("Wallabag status = %q, want %q", wallabagStatus, tc.wantWallabagState)
+			}
+			linkdingStatus := statusAfter(t, html, "Linkding connection:")
+			if linkdingStatus != tc.wantLinkdingState {
+				t.Errorf("Linkding status = %q, want %q", linkdingStatus, tc.wantLinkdingState)
+			}
+		})
+	}
+}
+
+// statusAfter returns the first connection indicator rendered after label.
+func statusAfter(t *testing.T, html, label string) string {
+	t.Helper()
+
+	idx := strings.Index(html, label)
+	if idx < 0 {
+		t.Fatalf("rendered page has no %q label", label)
+	}
+
+	rest := html[idx:]
+	ok, bad := strings.Index(rest, "✅"), strings.Index(rest, "❌")
+
+	if ok < 0 && bad < 0 {
+		t.Fatalf("no connection indicator after %q", label)
+	}
+	if bad < 0 || (ok >= 0 && ok < bad) {
+		return "✅"
+	}
+	return "❌"
+}
+
+func TestSettingsRendersExistingLinkdingSettings(t *testing.T) {
+	repo := &stubRepo{settings: &Settings{
+		UseLinkding: true,
+		LinkdingSettings: linkding.LinkdingSettings{
+			LinkdingInstanceURL: strptr("https://linkding.example.com"),
+			LinkdingAPIKey:      strptr("linkding-key"),
+		},
+	}}
+	handler := NewHandler(repo, &stubWallabag{}, &stubLinkding{})
+
+	app := fiber.New()
+	app.Get("/settings", handler.Settings)
+
+	res, err := app.Test(httptest.NewRequest(http.MethodGet, "/settings", nil))
+	if err != nil {
+		t.Fatalf("GET /settings: %v", err)
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	html := string(body)
+
+	for _, want := range []string{"https://linkding.example.com", "linkding-key", "linkding-instance-url", "linkding-api-key"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
+	}
+}
+
+// A nil *string field must render as an empty input rather than panicking --
+// this is the state of a fresh install that has never configured Linkding.
+func TestSettingsRendersWithUnsetLinkdingSettings(t *testing.T) {
+	repo := &stubRepo{settings: &Settings{}}
+	handler := NewHandler(repo, &stubWallabag{}, &stubLinkding{})
+
+	app := fiber.New()
+	app.Get("/settings", handler.Settings)
+
+	res, err := app.Test(httptest.NewRequest(http.MethodGet, "/settings", nil))
+	if err != nil {
+		t.Fatalf("GET /settings: %v", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d, want %d", res.StatusCode, fiber.StatusOK)
+	}
+}
+
+func TestUpdateSettingsPersistsLinkdingSettings(t *testing.T) {
+	repo := &stubRepo{}
+	handler := NewHandler(repo, &stubWallabag{}, &stubLinkding{})
+
+	app := fiber.New()
+	app.Post("/settings", handler.UpdateSettings)
+
+	res := postForm(t, app, "/settings", map[string]string{
+		"use-linkding":          "on",
+		"linkding-instance-url": "https://linkding.example.com",
+		"linkding-api-key":      "linkding-key",
+	})
+	defer res.Body.Close()
+
+	if res.StatusCode != fiber.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", res.StatusCode, fiber.StatusSeeOther)
+	}
+	if repo.updated == nil {
+		t.Fatal("UpdateWallabagSettings() was not called")
+	}
+	if !repo.updated.UseLinkding {
+		t.Error("updated UseLinkding = false, want the submitted checkbox to enable Linkding")
+	}
+	if repo.updated.LinkdingInstanceURL == nil || *repo.updated.LinkdingInstanceURL != "https://linkding.example.com" {
+		t.Errorf("updated Linkding URL = %v, want the submitted URL", repo.updated.LinkdingInstanceURL)
+	}
+	if repo.updated.LinkdingAPIKey == nil || *repo.updated.LinkdingAPIKey != "linkding-key" {
+		t.Errorf("updated Linkding API key = %v, want the submitted key", repo.updated.LinkdingAPIKey)
+	}
+}
+
+// An unchecked checkbox isn't submitted at all, which must read as "off".
+func TestUpdateSettingsUncheckedBoxesDisableSources(t *testing.T) {
+	repo := &stubRepo{}
+	handler := NewHandler(repo, &stubWallabag{}, &stubLinkding{})
+
+	app := fiber.New()
+	app.Post("/settings", handler.UpdateSettings)
+
+	res := postForm(t, app, "/settings", map[string]string{"wallabag-url": "https://new.example.com"})
+	defer res.Body.Close()
+
+	if repo.updated == nil {
+		t.Fatal("UpdateWallabagSettings() was not called")
+	}
+	if repo.updated.UseWallabag {
+		t.Error("updated UseWallabag = true, want false when the box is unchecked")
+	}
+	if repo.updated.UseLinkding {
+		t.Error("updated UseLinkding = true, want false when the box is unchecked")
 	}
 }

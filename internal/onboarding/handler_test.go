@@ -71,6 +71,7 @@ func validOnboardingForm() map[string]string {
 		"wallabag-password":      "wal-pass",
 		"wallabag-client-id":     "client-id",
 		"wallabag-client-secret": "client-secret",
+		"use-wallabag":           "on",
 	}
 }
 
@@ -97,8 +98,11 @@ func TestHandleOnboardingSuccess(t *testing.T) {
 	if repo.created.Username != "reader" {
 		t.Errorf("created username = %q, want reader", repo.created.Username)
 	}
-	if repo.created.WallabagInstanceURL != "https://wallabag.example.com" {
-		t.Errorf("created wallabag URL = %q, want the submitted URL", repo.created.WallabagInstanceURL)
+	if repo.created.WallabagInstanceURL == nil || *repo.created.WallabagInstanceURL != "https://wallabag.example.com" {
+		t.Errorf("created wallabag URL = %v, want the submitted URL", repo.created.WallabagInstanceURL)
+	}
+	if !repo.created.UseWallabag {
+		t.Error("created UseWallabag = false, want the submitted checkbox to enable Wallabag")
 	}
 	// The password must be stored hashed, never as the plaintext the user typed.
 	if repo.created.Password == "secret" || repo.created.Password == "" {
@@ -189,5 +193,68 @@ func TestRequireOnboardedError(t *testing.T) {
 
 	if res.StatusCode != fiber.StatusInternalServerError {
 		t.Errorf("status = %d, want %d", res.StatusCode, fiber.StatusInternalServerError)
+	}
+}
+
+func TestHandleOnboardingPersistsLinkdingSettings(t *testing.T) {
+	repo := &stubOnboardingRepo{}
+	handler := NewHandler(repo, &stubConfigurer{})
+
+	app := fiber.New()
+	app.Post("/onboarding", handler.HandleOnboarding)
+
+	res := postForm(t, app, "/onboarding", map[string]string{
+		"username":              "reader",
+		"password":              "secret",
+		"password-again":        "secret",
+		"use-linkding":          "on",
+		"linkding-instance-url": "https://linkding.example.com",
+		"linkding-api-key":      "linkding-key",
+	})
+	defer res.Body.Close()
+
+	if res.StatusCode != fiber.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", res.StatusCode, fiber.StatusSeeOther)
+	}
+	if repo.created == nil {
+		t.Fatal("Create() was not called")
+	}
+	if !repo.created.UseLinkding {
+		t.Error("created UseLinkding = false, want Linkding enabled")
+	}
+	if repo.created.LinkdingInstanceURL == nil || *repo.created.LinkdingInstanceURL != "https://linkding.example.com" {
+		t.Errorf("created Linkding URL = %v, want the submitted URL", repo.created.LinkdingInstanceURL)
+	}
+	if repo.created.LinkdingAPIKey == nil || *repo.created.LinkdingAPIKey != "linkding-key" {
+		t.Errorf("created Linkding API key = %v, want the submitted key", repo.created.LinkdingAPIKey)
+	}
+}
+
+// Onboarding without the Wallabag box ticked must not push empty credentials
+// into the Wallabag client.
+func TestHandleOnboardingSkipsWallabagConfigureWhenDisabled(t *testing.T) {
+	repo := &stubOnboardingRepo{}
+	configurer := &stubConfigurer{}
+	handler := NewHandler(repo, configurer)
+
+	app := fiber.New()
+	app.Post("/onboarding", handler.HandleOnboarding)
+
+	res := postForm(t, app, "/onboarding", map[string]string{
+		"username":       "reader",
+		"password":       "secret",
+		"password-again": "secret",
+		"use-linkding":   "on",
+	})
+	defer res.Body.Close()
+
+	if repo.created == nil {
+		t.Fatal("Create() was not called")
+	}
+	if repo.created.UseWallabag {
+		t.Error("created UseWallabag = true, want false when the box is unchecked")
+	}
+	if configurer.configured != nil {
+		t.Error("Configure() was called even though Wallabag is disabled")
 	}
 }

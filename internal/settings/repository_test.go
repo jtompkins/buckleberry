@@ -2,11 +2,17 @@ package settings
 
 import (
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"buckleberry/internal/database"
+	"buckleberry/internal/linkding"
 	"buckleberry/internal/wallabag"
 )
+
+func strptr(s string) *string {
+	return &s
+}
 
 func newTestRepository(t *testing.T) *Repository {
 	t.Helper()
@@ -79,11 +85,15 @@ func TestRepositoryCreateAndUpdate(t *testing.T) {
 	// UpdateWallabagSettings only touches the wallabag_* columns; the app
 	// username/password are intentionally left untouched.
 	updatedValues := *created
-	updatedValues.WallabagInstanceURL = "https://new.example.com"
-	updatedValues.WallabagUsername = "new-wallabag-user"
-	updatedValues.WallabagPassword = "new-wallabag-password"
-	updatedValues.WallabagClientID = "new-client-id"
-	updatedValues.WallabagClientSecret = "new-client-secret"
+	updatedValues.WallabagInstanceURL = strptr("https://new.example.com")
+	updatedValues.WallabagUsername = strptr("new-wallabag-user")
+	updatedValues.WallabagPassword = strptr("new-wallabag-password")
+	updatedValues.WallabagClientID = strptr("new-client-id")
+	updatedValues.WallabagClientSecret = strptr("new-client-secret")
+	updatedValues.UseWallabag = false
+	updatedValues.UseLinkding = true
+	updatedValues.LinkdingInstanceURL = strptr("https://new-linkding.example.com")
+	updatedValues.LinkdingAPIKey = strptr("new-linkding-key")
 
 	updated, err := repo.UpdateWallabagSettings(&updatedValues)
 	if err != nil {
@@ -100,14 +110,20 @@ func TestRepositoryCreateAndUpdate(t *testing.T) {
 
 func testSettings() *Settings {
 	return &Settings{
-		Username: "reader",
-		Password: "password",
+		Username:    "reader",
+		Password:    "password",
+		UseWallabag: true,
 		WallabagSettings: wallabag.WallabagSettings{
-			WallabagInstanceURL:  "https://wallabag.example.com",
-			WallabagUsername:     "wallabag-user",
-			WallabagPassword:     "wallabag-password",
-			WallabagClientID:     "client-id",
-			WallabagClientSecret: "client-secret",
+			WallabagInstanceURL:  strptr("https://wallabag.example.com"),
+			WallabagUsername:     strptr("wallabag-user"),
+			WallabagPassword:     strptr("wallabag-password"),
+			WallabagClientID:     strptr("client-id"),
+			WallabagClientSecret: strptr("client-secret"),
+		},
+		UseLinkding: true,
+		LinkdingSettings: linkding.LinkdingSettings{
+			LinkdingInstanceURL: strptr("https://linkding.example.com"),
+			LinkdingAPIKey:      strptr("linkding-key"),
 		},
 	}
 }
@@ -115,13 +131,46 @@ func testSettings() *Settings {
 func assertSettingsFields(t *testing.T, got, want *Settings) {
 	t.Helper()
 
-	if got.Username != want.Username ||
-		got.Password != want.Password ||
-		got.WallabagInstanceURL != want.WallabagInstanceURL ||
-		got.WallabagUsername != want.WallabagUsername ||
-		got.WallabagPassword != want.WallabagPassword ||
-		got.WallabagClientID != want.WallabagClientID ||
-		got.WallabagClientSecret != want.WallabagClientSecret {
-		t.Errorf("settings fields = %#v, want %#v", got, want)
+	if got.Username != want.Username || got.Password != want.Password {
+		t.Errorf("app credentials = %q/%q, want %q/%q", got.Username, got.Password, want.Username, want.Password)
 	}
+	if got.UseWallabag != want.UseWallabag {
+		t.Errorf("UseWallabag = %v, want %v", got.UseWallabag, want.UseWallabag)
+	}
+	if got.UseLinkding != want.UseLinkding {
+		t.Errorf("UseLinkding = %v, want %v", got.UseLinkding, want.UseLinkding)
+	}
+
+	fields := []struct {
+		name      string
+		got, want *string
+	}{
+		{"WallabagInstanceURL", got.WallabagInstanceURL, want.WallabagInstanceURL},
+		{"WallabagUsername", got.WallabagUsername, want.WallabagUsername},
+		{"WallabagPassword", got.WallabagPassword, want.WallabagPassword},
+		{"WallabagClientID", got.WallabagClientID, want.WallabagClientID},
+		{"WallabagClientSecret", got.WallabagClientSecret, want.WallabagClientSecret},
+		{"LinkdingInstanceURL", got.LinkdingInstanceURL, want.LinkdingInstanceURL},
+		{"LinkdingAPIKey", got.LinkdingAPIKey, want.LinkdingAPIKey},
+	}
+
+	for _, field := range fields {
+		if !equalStringPtr(field.got, field.want) {
+			t.Errorf("%s = %s, want %s", field.name, formatStringPtr(field.got), formatStringPtr(field.want))
+		}
+	}
+}
+
+func equalStringPtr(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+func formatStringPtr(s *string) string {
+	if s == nil {
+		return "<nil>"
+	}
+	return strconv.Quote(*s)
 }

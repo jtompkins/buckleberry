@@ -89,7 +89,7 @@ func TestFetchFromContentFailsWhenTempPathIsNotADirectory(t *testing.T) {
 }
 
 func TestFetchFromURLFailsOnInvalidAddress(t *testing.T) {
-	_, err := (ArticleFetcher{}).FetchFromURL("Title", "Author", "", t.TempDir())
+	_, err := (ArticleFetcher{}).FetchFromURL("", t.TempDir())
 	if err == nil {
 		t.Fatal("FetchFromURL() with an empty address = nil error, want failure")
 	}
@@ -125,13 +125,15 @@ func TestFetchFromURLFullPipeline(t *testing.T) {
 </html>`, bodyText, bodyText, server.URL, bodyText)
 	})
 
-	article, err := (ArticleFetcher{}).FetchFromURL("Passed-In Title", "Passed-In Author", server.URL+"/article", t.TempDir())
+	article, err := (ArticleFetcher{}).FetchFromURL(server.URL+"/article", t.TempDir())
 	if err != nil {
 		t.Fatalf("FetchFromURL() error = %v", err)
 	}
 
-	if article.Title != "Passed-In Title" || article.Author != "Passed-In Author" {
-		t.Errorf("article Title/Author = %q/%q, want the values passed to FetchFromURL, not anything extracted from the page", article.Title, article.Author)
+	// FetchFromURL no longer takes a title/author: both are extracted from the
+	// page by the readability parser.
+	if article.Title != "Server-Side Title" {
+		t.Errorf("article.Title = %q, want the title extracted from the page", article.Title)
 	}
 	if !strings.Contains(article.Content, "readability parser") {
 		t.Errorf("article.Content = %q, want it to contain the extracted body text", article.Content)
@@ -148,5 +150,89 @@ func TestFetchFromURLFullPipeline(t *testing.T) {
 		if string(got) != string(imageBytes) {
 			t.Errorf("downloaded image bytes = %v, want %v", got, imageBytes)
 		}
+	}
+}
+
+// newImageServer serves the same image bytes at any path and records what was
+// requested, so tests can assert which URL the fetcher chose.
+func newImageServer(t *testing.T, imageBytes []byte) (*httptest.Server, *[]string) {
+	t.Helper()
+
+	var requested []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested = append(requested, r.URL.Path)
+		w.Write(imageBytes)
+	}))
+	t.Cleanup(server.Close)
+
+	return server, &requested
+}
+
+func TestFetchFromContentPrefersSrcOverSrcset(t *testing.T) {
+	imageBytes := []byte{0xFF, 0xD8, 0xFF, 0xE0, 'p', 'i', 'c'}
+	server, requested := newImageServer(t, imageBytes)
+
+	content := fmt.Sprintf(`<p>text</p><img src="%s/src.jpg" srcset="%s/srcset.jpg">`, server.URL, server.URL)
+
+	article, err := (ArticleFetcher{}).FetchFromContent("Title", "Author", content, t.TempDir())
+	if err != nil {
+		t.Fatalf("FetchFromContent() error = %v", err)
+	}
+
+	if len(*requested) != 1 || (*requested)[0] != "/src.jpg" {
+		t.Errorf("fetched %v, want only the src attribute", *requested)
+	}
+	if _, ok := article.ImagePaths[server.URL+"/src.jpg"]; !ok {
+		t.Errorf("ImagePaths = %#v, want it keyed by the src URL", article.ImagePaths)
+	}
+}
+
+// When an image carries only a srcset, that is the fetcher's only candidate.
+func TestFetchFromContentFallsBackToSrcset(t *testing.T) {
+	imageBytes := []byte{0xFF, 0xD8, 0xFF, 0xE0, 'p', 'i', 'c'}
+	server, requested := newImageServer(t, imageBytes)
+
+	content := fmt.Sprintf(`<p>text</p><img srcset="%s/srcset.jpg">`, server.URL)
+
+	article, err := (ArticleFetcher{}).FetchFromContent("Title", "Author", content, t.TempDir())
+	if err != nil {
+		t.Fatalf("FetchFromContent() error = %v", err)
+	}
+
+	if len(*requested) != 1 || (*requested)[0] != "/srcset.jpg" {
+		t.Errorf("fetched %v, want the srcset URL", *requested)
+	}
+
+	localPath, ok := article.ImagePaths[server.URL+"/srcset.jpg"]
+	if !ok {
+		t.Fatalf("ImagePaths = %#v, want it keyed by the srcset URL", article.ImagePaths)
+	}
+	got, err := os.ReadFile(localPath)
+	if err != nil {
+		t.Fatalf("read downloaded image at %s: %v", localPath, err)
+	}
+	if string(got) != string(imageBytes) {
+		t.Errorf("downloaded image bytes = %v, want %v", got, imageBytes)
+	}
+}
+
+// An image with neither attribute is nothing to download, and must not stop
+// the images around it from being fetched.
+func TestFetchFromContentSkipsImagesWithoutSource(t *testing.T) {
+	imageBytes := []byte{0xFF, 0xD8, 0xFF, 0xE0, 'p', 'i', 'c'}
+	server, requested := newImageServer(t, imageBytes)
+
+	content := fmt.Sprintf(`<p>text</p><img alt="no source"><img src="%s/real.jpg">`, server.URL)
+
+	article, err := (ArticleFetcher{}).FetchFromContent("Title", "Author", content, t.TempDir())
+	if err != nil {
+		t.Fatalf("FetchFromContent() error = %v", err)
+	}
+
+	if len(*requested) != 1 || (*requested)[0] != "/real.jpg" {
+		t.Errorf("fetched %v, want just the image that has a source", *requested)
+	}
+	if len(article.ImagePaths) != 1 {
+		t.Errorf("ImagePaths = %#v, want exactly the one real image", article.ImagePaths)
 	}
 }

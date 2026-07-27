@@ -13,6 +13,7 @@ import (
 
 	"github.com/Strubbl/wallabago/v9"
 	"github.com/gofiber/fiber/v3"
+	"github.com/piero-vic/go-linkding"
 )
 
 type atomDocument struct {
@@ -74,6 +75,31 @@ type stubArticleFetcher struct {
 	gotAuthor   string
 	gotContent  string
 	gotTempPath string
+	gotURL      string
+}
+
+func (s *stubArticleFetcher) FetchFromURL(articleURL, tempPath string) (*epub.ReadableArticle, error) {
+	s.gotURL = articleURL
+	s.gotTempPath = tempPath
+	return s.article, s.err
+}
+
+type stubLinkdingClient struct {
+	bookmarks    []linkding.Bookmark
+	bookmarksErr error
+	bookmark     *linkding.Bookmark
+	bookmarkErr  error
+
+	gotBookmarkID int
+}
+
+func (s *stubLinkdingClient) GetUnread() ([]linkding.Bookmark, error) {
+	return s.bookmarks, s.bookmarksErr
+}
+
+func (s *stubLinkdingClient) GetBookmark(id int) (*linkding.Bookmark, error) {
+	s.gotBookmarkID = id
+	return s.bookmark, s.bookmarkErr
 }
 
 func (s *stubArticleFetcher) FetchFromContent(title, author, content, tempPath string) (*epub.ReadableArticle, error) {
@@ -110,35 +136,86 @@ func (s *stubWallabagClient) ExportEntry(id int, format string) ([]byte, error) 
 	return s.export, s.exportErr
 }
 
+// The navigation feed advertises only the sources the user has switched on.
 func TestGetNavigationFeeds(t *testing.T) {
-	handler := NewHandler(&stubSettingsRepo{}, &stubWallabagClient{}, nil, nil, "https://books.example.com")
+	tests := []struct {
+		name        string
+		useWallabag bool
+		useLinkding bool
+		wantEntries []string
+	}{
+		{
+			name:        "both sources enabled",
+			useWallabag: true,
+			useLinkding: true,
+			wantEntries: []string{"https://books.example.com/opds/wallabag", "https://books.example.com/opds/linkding"},
+		},
+		{
+			name:        "only wallabag enabled",
+			useWallabag: true,
+			wantEntries: []string{"https://books.example.com/opds/wallabag"},
+		},
+		{
+			name:        "only linkding enabled",
+			useLinkding: true,
+			wantEntries: []string{"https://books.example.com/opds/linkding"},
+		},
+		{
+			name:        "no sources enabled",
+			wantEntries: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &stubSettingsRepo{settings: &settings.Settings{UseWallabag: tc.useWallabag, UseLinkding: tc.useLinkding}}
+			handler := NewHandler(repo, &stubWallabagClient{}, &stubLinkdingClient{}, nil, nil, "https://books.example.com")
+			app := fiber.New()
+			app.Get("/opds", handler.GetNavigationFeeds)
+
+			response := performRequest(t, app, "/opds")
+			defer response.Body.Close()
+
+			if response.StatusCode != fiber.StatusOK {
+				t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusOK)
+			}
+			if got := response.Header.Get("Content-Type"); got != "application/atom+xml; charset=utf-8" {
+				t.Errorf("Content-Type = %q, want Atom", got)
+			}
+			feed := readAtom(t, response)
+			if feed.ID != "https://books.example.com/opds" {
+				t.Errorf("feed ID = %q, want navigation URL", feed.ID)
+			}
+			assertRFC3339(t, "feed updated", feed.Updated)
+			assertLink(t, feed.Links, "self", "https://books.example.com/opds", "")
+
+			if len(feed.Entries) != len(tc.wantEntries) {
+				t.Fatalf("entries = %d, want %d", len(feed.Entries), len(tc.wantEntries))
+			}
+			for i, wantID := range tc.wantEntries {
+				entry := feed.Entries[i]
+				if entry.ID != wantID {
+					t.Errorf("entry[%d] ID = %q, want %q", i, entry.ID, wantID)
+				}
+				assertRFC3339(t, "entry updated", entry.Updated)
+				assertLink(t, entry.Links, "alternate", wantID, ACQ_TYPE)
+			}
+		})
+	}
+}
+
+func TestGetNavigationFeedsSettingsError(t *testing.T) {
+	repo := &stubSettingsRepo{settingsErr: errors.New("db unavailable")}
+	handler := NewHandler(repo, &stubWallabagClient{}, &stubLinkdingClient{}, nil, nil, "https://books.example.com")
 	app := fiber.New()
 	app.Get("/opds", handler.GetNavigationFeeds)
 
 	response := performRequest(t, app, "/opds")
 	defer response.Body.Close()
 
-	if response.StatusCode != fiber.StatusOK {
-		t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusOK)
+	if response.StatusCode != fiber.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusInternalServerError)
 	}
-	if got := response.Header.Get("Content-Type"); got != "application/atom+xml; charset=utf-8" {
-		t.Errorf("Content-Type = %q, want Atom", got)
-	}
-	feed := readAtom(t, response)
-	if feed.ID != "https://books.example.com/opds" {
-		t.Errorf("feed ID = %q, want navigation URL", feed.ID)
-	}
-	assertRFC3339(t, "feed updated", feed.Updated)
-	assertLink(t, feed.Links, "self", "https://books.example.com/opds", "")
-	if len(feed.Entries) != 1 {
-		t.Fatalf("entries = %d, want 1", len(feed.Entries))
-	}
-	entry := feed.Entries[0]
-	if entry.ID != "https://books.example.com/opds/unread" {
-		t.Errorf("entry ID = %q, want unread feed URL", entry.ID)
-	}
-	assertRFC3339(t, "entry updated", entry.Updated)
-	assertLink(t, entry.Links, "alternate", "https://books.example.com/opds/unread", ACQ_TYPE)
 }
 
 func TestGetUnreadFeed(t *testing.T) {
@@ -150,11 +227,11 @@ func TestGetUnreadFeed(t *testing.T) {
 			{ID: 43, Title: "Another article", DomainName: "example.com", CreatedAt: &wallabago.WallabagTime{Time: created}},
 		}},
 	}}
-	handler := NewHandler(nil, client, nil, nil, "https://books.example.com")
+	handler := NewHandler(nil, client, &stubLinkdingClient{}, nil, nil, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/unread", handler.GetUnreadFeed)
+	app.Get("/opds/wallabag", handler.GetUnreadWallabagFeed)
 
-	response := performRequest(t, app, "/opds/unread")
+	response := performRequest(t, app, "/opds/wallabag")
 	defer response.Body.Close()
 
 	if response.StatusCode != fiber.StatusOK {
@@ -164,23 +241,23 @@ func TestGetUnreadFeed(t *testing.T) {
 		t.Errorf("Content-Type = %q, want Atom", got)
 	}
 	feed := readAtom(t, response)
-	if feed.ID != "https://books.example.com/opds/unread" {
+	if feed.ID != "https://books.example.com/opds/wallabag" {
 		t.Errorf("feed ID = %q, want unread feed URL", feed.ID)
 	}
 	assertRFC3339(t, "feed updated", feed.Updated)
-	assertLink(t, feed.Links, "self", "https://books.example.com/opds/unread", "")
+	assertLink(t, feed.Links, "self", "https://books.example.com/opds/wallabag", "")
 	if len(feed.Entries) != 2 {
 		t.Fatalf("entries = %d, want 2", len(feed.Entries))
 	}
 
 	first := feed.Entries[0]
-	if first.ID != "https://books.example.com/opds/download/42" || first.Title != "An article" || first.Author.Name != "Ada, Grace" {
+	if first.ID != "https://books.example.com/opds/wallabag/42" || first.Title != "An article" || first.Author.Name != "Ada, Grace" {
 		t.Errorf("first entry metadata = %#v", first)
 	}
 	if first.Updated != updated.Format(time.RFC3339) {
 		t.Errorf("first updated = %q, want %q", first.Updated, updated.Format(time.RFC3339))
 	}
-	assertLink(t, first.Links, "http://opds-spec.org/acquisition", "https://books.example.com/opds/download/42", "application/epub+zip")
+	assertLink(t, first.Links, "http://opds-spec.org/acquisition", "https://books.example.com/opds/wallabag/42", "application/epub+zip")
 
 	second := feed.Entries[1]
 	if second.Author.Name != "example.com" {
@@ -192,11 +269,11 @@ func TestGetUnreadFeed(t *testing.T) {
 }
 
 func TestGetUnreadFeedClientError(t *testing.T) {
-	handler := NewHandler(nil, &stubWallabagClient{entriesErr: errors.New("unavailable")}, nil, nil, "https://books.example.com")
+	handler := NewHandler(nil, &stubWallabagClient{entriesErr: errors.New("unavailable")}, &stubLinkdingClient{}, nil, nil, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/unread", handler.GetUnreadFeed)
+	app.Get("/opds/wallabag", handler.GetUnreadWallabagFeed)
 
-	response := performRequest(t, app, "/opds/unread")
+	response := performRequest(t, app, "/opds/wallabag")
 	defer response.Body.Close()
 
 	if response.StatusCode != fiber.StatusInternalServerError {
@@ -207,11 +284,11 @@ func TestGetUnreadFeedClientError(t *testing.T) {
 func TestGetDownload(t *testing.T) {
 	client := &stubWallabagClient{export: []byte("epub contents")}
 	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: false}}
-	handler := NewHandler(repo, client, nil, nil, "https://books.example.com")
+	handler := NewHandler(repo, client, &stubLinkdingClient{}, nil, nil, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/download/:id", handler.GetDownload)
+	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
 
-	response := performRequest(t, app, "/opds/download/42")
+	response := performRequest(t, app, "/opds/wallabag/42")
 	defer response.Body.Close()
 
 	if response.StatusCode != fiber.StatusOK {
@@ -239,11 +316,11 @@ func TestGetDownloadUsesInternalBuilder(t *testing.T) {
 	wantArticle := &epub.ReadableArticle{Title: "An article", Author: "Ada, Grace", Content: "<p>body</p>"}
 	fetcher := &stubArticleFetcher{article: wantArticle}
 	builder := &stubEPUBBuilder{output: []byte("built epub bytes")}
-	handler := NewHandler(repo, client, fetcher, builder, "https://books.example.com")
+	handler := NewHandler(repo, client, &stubLinkdingClient{}, fetcher, builder, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/download/:id", handler.GetDownload)
+	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
 
-	response := performRequest(t, app, "/opds/download/42")
+	response := performRequest(t, app, "/opds/wallabag/42")
 	defer response.Body.Close()
 
 	if response.StatusCode != fiber.StatusOK {
@@ -274,11 +351,11 @@ func TestGetDownloadUsesInternalBuilder(t *testing.T) {
 func TestGetDownloadInternalBuilderEntryFetchError(t *testing.T) {
 	client := &stubWallabagClient{entryErr: errors.New("entry unavailable")}
 	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: true}}
-	handler := NewHandler(repo, client, &stubArticleFetcher{}, &stubEPUBBuilder{}, "https://books.example.com")
+	handler := NewHandler(repo, client, &stubLinkdingClient{}, &stubArticleFetcher{}, &stubEPUBBuilder{}, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/download/:id", handler.GetDownload)
+	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
 
-	response := performRequest(t, app, "/opds/download/42")
+	response := performRequest(t, app, "/opds/wallabag/42")
 	defer response.Body.Close()
 
 	if response.StatusCode != fiber.StatusInternalServerError {
@@ -290,11 +367,11 @@ func TestGetDownloadInternalBuilderFetchError(t *testing.T) {
 	client := &stubWallabagClient{entry: &wallabago.Item{ID: 42, Title: "An article"}}
 	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: true}}
 	fetcher := &stubArticleFetcher{err: errors.New("fetch failed")}
-	handler := NewHandler(repo, client, fetcher, &stubEPUBBuilder{}, "https://books.example.com")
+	handler := NewHandler(repo, client, &stubLinkdingClient{}, fetcher, &stubEPUBBuilder{}, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/download/:id", handler.GetDownload)
+	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
 
-	response := performRequest(t, app, "/opds/download/42")
+	response := performRequest(t, app, "/opds/wallabag/42")
 	defer response.Body.Close()
 
 	if response.StatusCode != fiber.StatusInternalServerError {
@@ -307,11 +384,11 @@ func TestGetDownloadInternalBuilderBuildError(t *testing.T) {
 	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: true}}
 	fetcher := &stubArticleFetcher{article: &epub.ReadableArticle{}}
 	builder := &stubEPUBBuilder{err: errors.New("build failed")}
-	handler := NewHandler(repo, client, fetcher, builder, "https://books.example.com")
+	handler := NewHandler(repo, client, &stubLinkdingClient{}, fetcher, builder, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/download/:id", handler.GetDownload)
+	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
 
-	response := performRequest(t, app, "/opds/download/42")
+	response := performRequest(t, app, "/opds/wallabag/42")
 	defer response.Body.Close()
 
 	if response.StatusCode != fiber.StatusInternalServerError {
@@ -321,11 +398,11 @@ func TestGetDownloadInternalBuilderBuildError(t *testing.T) {
 
 func TestGetDownloadSettingsFetchError(t *testing.T) {
 	repo := &stubSettingsRepo{settingsErr: errors.New("db unavailable")}
-	handler := NewHandler(repo, &stubWallabagClient{}, &stubArticleFetcher{}, &stubEPUBBuilder{}, "https://books.example.com")
+	handler := NewHandler(repo, &stubWallabagClient{}, &stubLinkdingClient{}, &stubArticleFetcher{}, &stubEPUBBuilder{}, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/download/:id", handler.GetDownload)
+	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
 
-	response := performRequest(t, app, "/opds/download/42")
+	response := performRequest(t, app, "/opds/wallabag/42")
 	defer response.Body.Close()
 
 	if response.StatusCode != fiber.StatusInternalServerError {
@@ -335,11 +412,11 @@ func TestGetDownloadSettingsFetchError(t *testing.T) {
 
 func TestGetDownloadRejectsInvalidID(t *testing.T) {
 	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: false}}
-	handler := NewHandler(repo, &stubWallabagClient{}, nil, nil, "https://books.example.com")
+	handler := NewHandler(repo, &stubWallabagClient{}, &stubLinkdingClient{}, nil, nil, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/download/:id", handler.GetDownload)
+	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
 
-	response := performRequest(t, app, "/opds/download/not-a-number")
+	response := performRequest(t, app, "/opds/wallabag/not-a-number")
 	defer response.Body.Close()
 
 	if response.StatusCode != fiber.StatusBadRequest {
@@ -350,11 +427,11 @@ func TestGetDownloadRejectsInvalidID(t *testing.T) {
 func TestGetDownloadExportError(t *testing.T) {
 	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: false}}
 	client := &stubWallabagClient{exportErr: errors.New("export failed")}
-	handler := NewHandler(repo, client, nil, nil, "https://books.example.com")
+	handler := NewHandler(repo, client, &stubLinkdingClient{}, nil, nil, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/download/:id", handler.GetDownload)
+	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
 
-	response := performRequest(t, app, "/opds/download/42")
+	response := performRequest(t, app, "/opds/wallabag/42")
 	defer response.Body.Close()
 
 	if response.StatusCode != fiber.StatusInternalServerError {
@@ -411,4 +488,160 @@ func assertLink(t *testing.T, links []atomLink, rel, href, mediaType string) {
 		}
 	}
 	t.Errorf("missing link rel=%q href=%q type=%q; got %#v", rel, href, mediaType, links)
+}
+
+func TestGetUnreadLinkdingFeed(t *testing.T) {
+	added := time.Date(2026, time.July, 12, 15, 30, 0, 0, time.UTC)
+	olderAdded := time.Date(2026, time.July, 10, 12, 0, 0, 0, time.UTC)
+	client := &stubLinkdingClient{bookmarks: []linkding.Bookmark{
+		{ID: 7, Title: "A bookmark", URL: "https://example.com/a", WebsiteTitle: "Example", DateAdded: added},
+		{ID: 8, Title: "Another bookmark", URL: "https://example.com/b", WebsiteTitle: "Other", DateAdded: olderAdded},
+	}}
+	handler := NewHandler(nil, &stubWallabagClient{}, client, nil, nil, "https://books.example.com")
+	app := fiber.New()
+	app.Get("/opds/linkding", handler.GetUnreadLinkdingFeed)
+
+	response := performRequest(t, app, "/opds/linkding")
+	defer response.Body.Close()
+
+	if response.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusOK)
+	}
+	if got := response.Header.Get("Content-Type"); got != "application/atom+xml; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want Atom", got)
+	}
+
+	feed := readAtom(t, response)
+	if feed.ID != "https://books.example.com/opds/linkding" {
+		t.Errorf("feed ID = %q, want the linkding feed URL", feed.ID)
+	}
+	assertLink(t, feed.Links, "self", "https://books.example.com/opds/linkding", "")
+	if len(feed.Entries) != 2 {
+		t.Fatalf("entries = %d, want 2", len(feed.Entries))
+	}
+
+	first := feed.Entries[0]
+	if first.ID != "https://books.example.com/opds/linkding/7" || first.Title != "A bookmark" {
+		t.Errorf("first entry metadata = %#v", first)
+	}
+	// Linkding has no author field, so the site name stands in for one.
+	if first.Author.Name != "Example" {
+		t.Errorf("first author = %q, want the website title", first.Author.Name)
+	}
+	if first.Updated != added.Format(time.RFC3339) {
+		t.Errorf("first updated = %q, want the date the bookmark was added", first.Updated)
+	}
+	assertLink(t, first.Links, "http://opds-spec.org/acquisition", "https://books.example.com/opds/linkding/7", "application/epub+zip")
+
+	if second := feed.Entries[1]; second.ID != "https://books.example.com/opds/linkding/8" {
+		t.Errorf("second entry ID = %q, want the second bookmark's URL", second.ID)
+	}
+}
+
+func TestGetUnreadLinkdingFeedClientError(t *testing.T) {
+	client := &stubLinkdingClient{bookmarksErr: errors.New("unavailable")}
+	handler := NewHandler(nil, &stubWallabagClient{}, client, nil, nil, "https://books.example.com")
+	app := fiber.New()
+	app.Get("/opds/linkding", handler.GetUnreadLinkdingFeed)
+
+	response := performRequest(t, app, "/opds/linkding")
+	defer response.Body.Close()
+
+	if response.StatusCode != fiber.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusInternalServerError)
+	}
+}
+
+// Linkding stores only a URL, so downloads always go through the internal
+// builder: fetch the page, then build an EPUB from it.
+func TestGetLinkdingDownload(t *testing.T) {
+	client := &stubLinkdingClient{bookmark: &linkding.Bookmark{ID: 42, URL: "https://example.com/article", Title: "An article"}}
+	wantArticle := &epub.ReadableArticle{Title: "An article", Author: "Ada", Content: "<p>body</p>"}
+	fetcher := &stubArticleFetcher{article: wantArticle}
+	builder := &stubEPUBBuilder{output: []byte("built epub bytes")}
+	handler := NewHandler(nil, &stubWallabagClient{}, client, fetcher, builder, "https://books.example.com")
+	app := fiber.New()
+	app.Get("/opds/linkding/:id", handler.GetLinkdingDownload)
+
+	response := performRequest(t, app, "/opds/linkding/42")
+	defer response.Body.Close()
+
+	if response.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusOK)
+	}
+	if got := response.Header.Get("Content-Type"); got != "application/epub+zip" {
+		t.Errorf("Content-Type = %q, want application/epub+zip", got)
+	}
+	if body := readBody(t, response); body != "built epub bytes" {
+		t.Errorf("body = %q, want %q", body, "built epub bytes")
+	}
+
+	if client.gotBookmarkID != 42 {
+		t.Errorf("GetBookmark() called with id = %d, want 42", client.gotBookmarkID)
+	}
+	if fetcher.gotURL != "https://example.com/article" {
+		t.Errorf("FetchFromURL() called with %q, want the bookmark's URL", fetcher.gotURL)
+	}
+	if fetcher.gotTempPath == "" {
+		t.Error("FetchFromURL() called with empty tempPath")
+	}
+	if builder.gotArticle != wantArticle {
+		t.Errorf("Build() called with article = %#v, want the article returned by the fetcher", builder.gotArticle)
+	}
+}
+
+func TestGetLinkdingDownloadRejectsInvalidID(t *testing.T) {
+	handler := NewHandler(nil, &stubWallabagClient{}, &stubLinkdingClient{}, &stubArticleFetcher{}, &stubEPUBBuilder{}, "https://books.example.com")
+	app := fiber.New()
+	app.Get("/opds/linkding/:id", handler.GetLinkdingDownload)
+
+	response := performRequest(t, app, "/opds/linkding/not-a-number")
+	defer response.Body.Close()
+
+	if response.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusBadRequest)
+	}
+}
+
+func TestGetLinkdingDownloadErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		client  *stubLinkdingClient
+		fetcher *stubArticleFetcher
+		builder *stubEPUBBuilder
+	}{
+		{
+			name:    "bookmark lookup fails",
+			client:  &stubLinkdingClient{bookmarkErr: errors.New("bookmark unavailable")},
+			fetcher: &stubArticleFetcher{},
+			builder: &stubEPUBBuilder{},
+		},
+		{
+			name:    "page fetch fails",
+			client:  &stubLinkdingClient{bookmark: &linkding.Bookmark{ID: 42, URL: "https://example.com/article"}},
+			fetcher: &stubArticleFetcher{err: errors.New("fetch failed")},
+			builder: &stubEPUBBuilder{},
+		},
+		{
+			name:    "epub build fails",
+			client:  &stubLinkdingClient{bookmark: &linkding.Bookmark{ID: 42, URL: "https://example.com/article"}},
+			fetcher: &stubArticleFetcher{article: &epub.ReadableArticle{}},
+			builder: &stubEPUBBuilder{err: errors.New("build failed")},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := NewHandler(nil, &stubWallabagClient{}, tc.client, tc.fetcher, tc.builder, "https://books.example.com")
+			app := fiber.New()
+			app.Get("/opds/linkding/:id", handler.GetLinkdingDownload)
+
+			response := performRequest(t, app, "/opds/linkding/42")
+			defer response.Body.Close()
+
+			if response.StatusCode != fiber.StatusInternalServerError {
+				t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusInternalServerError)
+			}
+		})
+	}
 }
