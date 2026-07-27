@@ -2,7 +2,9 @@ package opds
 
 import (
 	"buckleberry/internal/epub"
+	"buckleberry/internal/linkding"
 	"buckleberry/internal/settings"
+	"buckleberry/internal/wallabag"
 	"encoding/xml"
 	"errors"
 	"io"
@@ -13,7 +15,7 @@ import (
 
 	"github.com/Strubbl/wallabago/v9"
 	"github.com/gofiber/fiber/v3"
-	"github.com/piero-vic/go-linkding"
+	linkdinglib "github.com/piero-vic/go-linkding"
 )
 
 type atomDocument struct {
@@ -85,19 +87,19 @@ func (s *stubArticleFetcher) FetchFromURL(articleURL, tempPath string) (*epub.Re
 }
 
 type stubLinkdingClient struct {
-	bookmarks    []linkding.Bookmark
+	bookmarks    []linkdinglib.Bookmark
 	bookmarksErr error
-	bookmark     *linkding.Bookmark
+	bookmark     *linkdinglib.Bookmark
 	bookmarkErr  error
 
 	gotBookmarkID int
 }
 
-func (s *stubLinkdingClient) GetUnread() ([]linkding.Bookmark, error) {
+func (s *stubLinkdingClient) GetUnread() ([]linkdinglib.Bookmark, error) {
 	return s.bookmarks, s.bookmarksErr
 }
 
-func (s *stubLinkdingClient) GetBookmark(id int) (*linkding.Bookmark, error) {
+func (s *stubLinkdingClient) GetBookmark(id int) (*linkdinglib.Bookmark, error) {
 	s.gotBookmarkID = id
 	return s.bookmark, s.bookmarkErr
 }
@@ -168,7 +170,10 @@ func TestGetNavigationFeeds(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			repo := &stubSettingsRepo{settings: &settings.Settings{UseWallabag: tc.useWallabag, UseLinkding: tc.useLinkding}}
+			repo := &stubSettingsRepo{settings: &settings.Settings{
+				WallabagSettings: wallabag.WallabagSettings{UseWallabag: tc.useWallabag},
+				LinkdingSettings: linkding.LinkdingSettings{UseLinkding: tc.useLinkding},
+			}}
 			handler := NewHandler(repo, &stubWallabagClient{}, &stubLinkdingClient{}, nil, nil, "https://books.example.com")
 			app := fiber.New()
 			app.Get("/opds", handler.GetNavigationFeeds)
@@ -283,10 +288,10 @@ func TestGetUnreadFeedClientError(t *testing.T) {
 
 func TestGetDownload(t *testing.T) {
 	client := &stubWallabagClient{export: []byte("epub contents")}
-	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: false}}
+	repo := &stubSettingsRepo{settings: &settings.Settings{WallabagSettings: wallabag.WallabagSettings{UseWallabag: true, UseInternalEpubBuilder: false}}}
 	handler := NewHandler(repo, client, &stubLinkdingClient{}, nil, nil, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
+	app.Get("/opds/wallabag/:id", handler.RequireWallabag, handler.GetWallabagDownload)
 
 	response := performRequest(t, app, "/opds/wallabag/42")
 	defer response.Body.Close()
@@ -312,13 +317,13 @@ func TestGetDownloadUsesInternalBuilder(t *testing.T) {
 		Content:     "<p>body</p>",
 		PublishedBy: []string{"Ada", "Grace"},
 	}}
-	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: true}}
+	repo := &stubSettingsRepo{settings: &settings.Settings{WallabagSettings: wallabag.WallabagSettings{UseWallabag: true, UseInternalEpubBuilder: true}}}
 	wantArticle := &epub.ReadableArticle{Title: "An article", Author: "Ada, Grace", Content: "<p>body</p>"}
 	fetcher := &stubArticleFetcher{article: wantArticle}
 	builder := &stubEPUBBuilder{output: []byte("built epub bytes")}
 	handler := NewHandler(repo, client, &stubLinkdingClient{}, fetcher, builder, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
+	app.Get("/opds/wallabag/:id", handler.RequireWallabag, handler.GetWallabagDownload)
 
 	response := performRequest(t, app, "/opds/wallabag/42")
 	defer response.Body.Close()
@@ -350,10 +355,10 @@ func TestGetDownloadUsesInternalBuilder(t *testing.T) {
 
 func TestGetDownloadInternalBuilderEntryFetchError(t *testing.T) {
 	client := &stubWallabagClient{entryErr: errors.New("entry unavailable")}
-	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: true}}
+	repo := &stubSettingsRepo{settings: &settings.Settings{WallabagSettings: wallabag.WallabagSettings{UseWallabag: true, UseInternalEpubBuilder: true}}}
 	handler := NewHandler(repo, client, &stubLinkdingClient{}, &stubArticleFetcher{}, &stubEPUBBuilder{}, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
+	app.Get("/opds/wallabag/:id", handler.RequireWallabag, handler.GetWallabagDownload)
 
 	response := performRequest(t, app, "/opds/wallabag/42")
 	defer response.Body.Close()
@@ -365,11 +370,11 @@ func TestGetDownloadInternalBuilderEntryFetchError(t *testing.T) {
 
 func TestGetDownloadInternalBuilderFetchError(t *testing.T) {
 	client := &stubWallabagClient{entry: &wallabago.Item{ID: 42, Title: "An article"}}
-	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: true}}
+	repo := &stubSettingsRepo{settings: &settings.Settings{WallabagSettings: wallabag.WallabagSettings{UseWallabag: true, UseInternalEpubBuilder: true}}}
 	fetcher := &stubArticleFetcher{err: errors.New("fetch failed")}
 	handler := NewHandler(repo, client, &stubLinkdingClient{}, fetcher, &stubEPUBBuilder{}, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
+	app.Get("/opds/wallabag/:id", handler.RequireWallabag, handler.GetWallabagDownload)
 
 	response := performRequest(t, app, "/opds/wallabag/42")
 	defer response.Body.Close()
@@ -381,12 +386,12 @@ func TestGetDownloadInternalBuilderFetchError(t *testing.T) {
 
 func TestGetDownloadInternalBuilderBuildError(t *testing.T) {
 	client := &stubWallabagClient{entry: &wallabago.Item{ID: 42, Title: "An article"}}
-	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: true}}
+	repo := &stubSettingsRepo{settings: &settings.Settings{WallabagSettings: wallabag.WallabagSettings{UseWallabag: true, UseInternalEpubBuilder: true}}}
 	fetcher := &stubArticleFetcher{article: &epub.ReadableArticle{}}
 	builder := &stubEPUBBuilder{err: errors.New("build failed")}
 	handler := NewHandler(repo, client, &stubLinkdingClient{}, fetcher, builder, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
+	app.Get("/opds/wallabag/:id", handler.RequireWallabag, handler.GetWallabagDownload)
 
 	response := performRequest(t, app, "/opds/wallabag/42")
 	defer response.Body.Close()
@@ -400,7 +405,7 @@ func TestGetDownloadSettingsFetchError(t *testing.T) {
 	repo := &stubSettingsRepo{settingsErr: errors.New("db unavailable")}
 	handler := NewHandler(repo, &stubWallabagClient{}, &stubLinkdingClient{}, &stubArticleFetcher{}, &stubEPUBBuilder{}, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
+	app.Get("/opds/wallabag/:id", handler.RequireWallabag, handler.GetWallabagDownload)
 
 	response := performRequest(t, app, "/opds/wallabag/42")
 	defer response.Body.Close()
@@ -411,10 +416,10 @@ func TestGetDownloadSettingsFetchError(t *testing.T) {
 }
 
 func TestGetDownloadRejectsInvalidID(t *testing.T) {
-	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: false}}
+	repo := &stubSettingsRepo{settings: &settings.Settings{WallabagSettings: wallabag.WallabagSettings{UseWallabag: true, UseInternalEpubBuilder: false}}}
 	handler := NewHandler(repo, &stubWallabagClient{}, &stubLinkdingClient{}, nil, nil, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
+	app.Get("/opds/wallabag/:id", handler.RequireWallabag, handler.GetWallabagDownload)
 
 	response := performRequest(t, app, "/opds/wallabag/not-a-number")
 	defer response.Body.Close()
@@ -425,11 +430,11 @@ func TestGetDownloadRejectsInvalidID(t *testing.T) {
 }
 
 func TestGetDownloadExportError(t *testing.T) {
-	repo := &stubSettingsRepo{settings: &settings.Settings{UseInternalEpubBuilder: false}}
+	repo := &stubSettingsRepo{settings: &settings.Settings{WallabagSettings: wallabag.WallabagSettings{UseWallabag: true, UseInternalEpubBuilder: false}}}
 	client := &stubWallabagClient{exportErr: errors.New("export failed")}
 	handler := NewHandler(repo, client, &stubLinkdingClient{}, nil, nil, "https://books.example.com")
 	app := fiber.New()
-	app.Get("/opds/wallabag/:id", handler.GetWallabagDownload)
+	app.Get("/opds/wallabag/:id", handler.RequireWallabag, handler.GetWallabagDownload)
 
 	response := performRequest(t, app, "/opds/wallabag/42")
 	defer response.Body.Close()
@@ -493,7 +498,7 @@ func assertLink(t *testing.T, links []atomLink, rel, href, mediaType string) {
 func TestGetUnreadLinkdingFeed(t *testing.T) {
 	added := time.Date(2026, time.July, 12, 15, 30, 0, 0, time.UTC)
 	olderAdded := time.Date(2026, time.July, 10, 12, 0, 0, 0, time.UTC)
-	client := &stubLinkdingClient{bookmarks: []linkding.Bookmark{
+	client := &stubLinkdingClient{bookmarks: []linkdinglib.Bookmark{
 		{ID: 7, Title: "A bookmark", URL: "https://example.com/a", WebsiteTitle: "Example", DateAdded: added},
 		{ID: 8, Title: "Another bookmark", URL: "https://example.com/b", WebsiteTitle: "Other", DateAdded: olderAdded},
 	}}
@@ -555,7 +560,7 @@ func TestGetUnreadLinkdingFeedClientError(t *testing.T) {
 // Linkding stores only a URL, so downloads always go through the internal
 // builder: fetch the page, then build an EPUB from it.
 func TestGetLinkdingDownload(t *testing.T) {
-	client := &stubLinkdingClient{bookmark: &linkding.Bookmark{ID: 42, URL: "https://example.com/article", Title: "An article"}}
+	client := &stubLinkdingClient{bookmark: &linkdinglib.Bookmark{ID: 42, URL: "https://example.com/article", Title: "An article"}}
 	wantArticle := &epub.ReadableArticle{Title: "An article", Author: "Ada", Content: "<p>body</p>"}
 	fetcher := &stubArticleFetcher{article: wantArticle}
 	builder := &stubEPUBBuilder{output: []byte("built epub bytes")}
@@ -618,13 +623,13 @@ func TestGetLinkdingDownloadErrors(t *testing.T) {
 		},
 		{
 			name:    "page fetch fails",
-			client:  &stubLinkdingClient{bookmark: &linkding.Bookmark{ID: 42, URL: "https://example.com/article"}},
+			client:  &stubLinkdingClient{bookmark: &linkdinglib.Bookmark{ID: 42, URL: "https://example.com/article"}},
 			fetcher: &stubArticleFetcher{err: errors.New("fetch failed")},
 			builder: &stubEPUBBuilder{},
 		},
 		{
 			name:    "epub build fails",
-			client:  &stubLinkdingClient{bookmark: &linkding.Bookmark{ID: 42, URL: "https://example.com/article"}},
+			client:  &stubLinkdingClient{bookmark: &linkdinglib.Bookmark{ID: 42, URL: "https://example.com/article"}},
 			fetcher: &stubArticleFetcher{article: &epub.ReadableArticle{}},
 			builder: &stubEPUBBuilder{err: errors.New("build failed")},
 		},
@@ -643,5 +648,69 @@ func TestGetLinkdingDownloadErrors(t *testing.T) {
 				t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusInternalServerError)
 			}
 		})
+	}
+}
+
+// The source guards keep a disabled integration's routes from being served,
+// and hand the settings they loaded to the handler behind them.
+func TestRequireSourceGuards(t *testing.T) {
+	enabled := func(useWallabag, useLinkding bool) *settings.Settings {
+		return &settings.Settings{
+			WallabagSettings: wallabag.WallabagSettings{UseWallabag: useWallabag},
+			LinkdingSettings: linkding.LinkdingSettings{UseLinkding: useLinkding},
+		}
+	}
+
+	tests := []struct {
+		name       string
+		settings   *settings.Settings
+		guard      func(*Handler) fiber.Handler
+		wantStatus int
+	}{
+		{"wallabag enabled passes", enabled(true, false), func(h *Handler) fiber.Handler { return h.RequireWallabag }, fiber.StatusOK},
+		{"wallabag disabled blocked", enabled(false, true), func(h *Handler) fiber.Handler { return h.RequireWallabag }, fiber.StatusBadRequest},
+		{"linkding enabled passes", enabled(false, true), func(h *Handler) fiber.Handler { return h.RequireLinkding }, fiber.StatusOK},
+		{"linkding disabled blocked", enabled(true, false), func(h *Handler) fiber.Handler { return h.RequireLinkding }, fiber.StatusBadRequest},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &stubSettingsRepo{settings: tc.settings}
+			handler := NewHandler(repo, &stubWallabagClient{}, &stubLinkdingClient{}, nil, nil, "https://books.example.com")
+
+			app := fiber.New()
+			app.Get("/guarded", tc.guard(handler), func(c fiber.Ctx) error {
+				// The guard must publish the settings it already loaded, so
+				// the handler behind it doesn't have to read them again.
+				if fiber.Locals[*settings.Settings](c, "settings") == nil {
+					t.Error("guard did not put settings into locals")
+				}
+				return c.SendStatus(fiber.StatusOK)
+			})
+
+			response := performRequest(t, app, "/guarded")
+			defer response.Body.Close()
+
+			if response.StatusCode != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", response.StatusCode, tc.wantStatus)
+			}
+		})
+	}
+}
+
+func TestRequireSourceSettingsError(t *testing.T) {
+	repo := &stubSettingsRepo{settingsErr: errors.New("db unavailable")}
+	handler := NewHandler(repo, &stubWallabagClient{}, &stubLinkdingClient{}, nil, nil, "https://books.example.com")
+
+	app := fiber.New()
+	app.Get("/guarded", handler.RequireWallabag, func(c fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusOK)
+	})
+
+	response := performRequest(t, app, "/guarded")
+	defer response.Body.Close()
+
+	if response.StatusCode != fiber.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusInternalServerError)
 	}
 }

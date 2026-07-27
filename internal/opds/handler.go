@@ -65,6 +65,29 @@ func NewHandler(settingsRepository settingsReader, wallabagClient wallabagClient
 	}
 }
 
+func (h *Handler) requireSource(c fiber.Ctx, enabled func(*settings.Settings) bool) error {
+	currentSettings, err := h.settingsRepo.Get()
+
+	if err != nil {
+		return err
+	}
+
+	if !enabled(currentSettings) {
+		return c.Status(fiber.StatusBadRequest).SendString("source not enabled")
+	}
+
+	fiber.Locals(c, "settings", currentSettings)
+	return c.Next()
+}
+
+func (h *Handler) RequireWallabag(c fiber.Ctx) error {
+	return h.requireSource(c, func(s *settings.Settings) bool { return s.UseWallabag })
+}
+
+func (h *Handler) RequireLinkding(c fiber.Ctx) error {
+	return h.requireSource(c, func(s *settings.Settings) bool { return s.UseLinkding })
+}
+
 func (h *Handler) GetNavigationFeeds(c fiber.Ctx) error {
 	settings, err := h.settingsRepo.Get()
 
@@ -195,11 +218,7 @@ func (h *Handler) GetUnreadWallabagFeed(c fiber.Ctx) error {
 }
 
 func (h *Handler) GetWallabagDownload(c fiber.Ctx) error {
-	settings, err := h.settingsRepo.Get()
-
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString("Couldn't fetch settings")
-	}
+	settings := fiber.Locals[*settings.Settings](c, "settings")
 
 	idParam := c.Params("id")
 
