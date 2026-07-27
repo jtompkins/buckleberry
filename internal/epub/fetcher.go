@@ -37,10 +37,19 @@ func (ArticleFetcher) FetchFromContent(title, author, content string, tempPath s
 	}
 
 	doc.Find("img").EachWithBreak(func(i int, s *goquery.Selection) bool {
-		href, exists := s.Attr("src")
+		src, srcExists := s.Attr("src")
+		srcset, srcsetExists := s.Attr("srcset")
 
-		if !exists {
+		if !srcExists && !srcsetExists {
 			return true
+		}
+
+		var href string
+
+		if srcExists {
+			href = src
+		} else {
+			href = srcset
 		}
 
 		outputFilename, err := fetchImage(href, articleTempPath)
@@ -57,35 +66,11 @@ func (ArticleFetcher) FetchFromContent(title, author, content string, tempPath s
 	return readableArticle, nil
 }
 
-func (f ArticleFetcher) FetchFromURL(title, author, articleURL string, tempPath string) (*ReadableArticle, error) {
-	content, err := fetchReadableHtml(articleURL)
+func (f ArticleFetcher) FetchFromURL(articleURL string, tempPath string) (*ReadableArticle, error) {
+	article, err := fetchReadableHtml(articleURL)
 
 	if err != nil {
 		return nil, fmt.Errorf("fetchReadableHtml: %w", err)
-	}
-
-	return f.FetchFromContent(title, author, content, tempPath)
-}
-
-func fetchReadableHtml(address string) (string, error) {
-	resp, err := http.Get(address)
-
-	if err != nil {
-		return "", fmt.Errorf("http GET of article at URL %s: %w", address, err)
-	}
-
-	defer resp.Body.Close()
-
-	parsedUrl, err := url.Parse(address)
-
-	if err != nil {
-		return "", fmt.Errorf("parsing url %s: %w", address, err)
-	}
-
-	article, err := readability.FromReader(resp.Body, parsedUrl)
-
-	if err != nil {
-		return "", fmt.Errorf("creating Readability reader: %w", err)
 	}
 
 	contentBuilder := new(strings.Builder)
@@ -93,10 +78,37 @@ func fetchReadableHtml(address string) (string, error) {
 	err = article.RenderHTML(contentBuilder)
 
 	if err != nil {
-		return "", fmt.Errorf("rendering HTML: %w", err)
+		return nil, fmt.Errorf("rendering HTML: %w", err)
 	}
 
-	return contentBuilder.String(), nil
+	content := contentBuilder.String()
+
+	return f.FetchFromContent(article.Title(), article.Byline(), content, tempPath)
+}
+
+func fetchReadableHtml(address string) (*readability.Article, error) {
+	resp, err := http.Get(address)
+
+	if err != nil {
+		return nil, fmt.Errorf("http GET of article at URL %s: %w", address, err)
+	}
+
+	defer resp.Body.Close()
+
+	parsedUrl, err := url.Parse(address)
+
+	if err != nil {
+		return nil, fmt.Errorf("parsing url %s: %w", address, err)
+	}
+
+	article, err := readability.FromReader(resp.Body, parsedUrl)
+
+	if err != nil {
+		return nil, fmt.Errorf("creating Readability reader: %w", err)
+	}
+
+	return &article, nil
+
 }
 
 func fetchImage(imageAddress string, tempDir string) (string, error) {
