@@ -3,10 +3,9 @@ package epub
 import "encoding/json"
 
 type ReadableArticle struct {
-	Title      string
-	Author     string
-	Content    string
-	ImagePaths map[string]string
+	Title   string
+	Author  string
+	Content string
 }
 
 func (a ReadableArticle) String() string {

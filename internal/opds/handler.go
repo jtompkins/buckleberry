@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -41,8 +40,8 @@ type epubBuilder interface {
 }
 
 type articleFetcher interface {
-	FetchFromContent(title, author, content string, tempPath string) (*epub.ReadableArticle, error)
-	FetchFromURL(articleURL string, tempPath string) (*epub.ReadableArticle, error)
+	FetchFromContent(title, author, content string) (*epub.ReadableArticle, error)
+	FetchFromURL(articleURL string) (*epub.ReadableArticle, error)
 }
 
 type Handler struct {
@@ -242,18 +241,9 @@ func (h *Handler) GetWallabagDownload(c fiber.Ctx) error {
 			return c.Status(fiber.StatusInternalServerError).SendString("Couldn't fetch wallabag article")
 		}
 
-		tempDir, err := os.MkdirTemp("", "epubbuilder")
-
-		if err != nil {
-			log.Errorf("Failed to create temp dir: %w", err)
-			return fmt.Errorf("creating temp dir: %w", err)
-		}
-
-		defer os.RemoveAll(tempDir)
-
 		author := strings.Join(entry.PublishedBy, ", ")
 
-		article, err := h.fetcher.FetchFromContent(entry.Title, author, entry.Content, tempDir)
+		article, err := h.fetcher.FetchFromContent(entry.Title, author, entry.Content)
 
 		if err != nil {
 			log.Errorf("Failed to create readable article: %w", err)
@@ -349,16 +339,7 @@ func (h *Handler) GetLinkdingDownload(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).SendString("Couldn't fetch linkding article")
 	}
 
-	tempDir, err := os.MkdirTemp("", "epubbuilder")
-
-	if err != nil {
-		log.Errorf("Failed to create temp dir: %w", err)
-		return fmt.Errorf("creating temp dir: %w", err)
-	}
-
-	defer os.RemoveAll(tempDir)
-
-	article, err := h.fetcher.FetchFromURL(bookmark.URL, tempDir)
+	article, err := h.fetcher.FetchFromURL(bookmark.URL)
 
 	if err != nil {
 		log.Errorf("Failed to create readable article: %w", err)

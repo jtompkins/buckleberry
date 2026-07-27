@@ -73,16 +73,14 @@ type stubArticleFetcher struct {
 	article *epub.ReadableArticle
 	err     error
 
-	gotTitle    string
-	gotAuthor   string
-	gotContent  string
-	gotTempPath string
-	gotURL      string
+	gotTitle   string
+	gotAuthor  string
+	gotContent string
+	gotURL     string
 }
 
-func (s *stubArticleFetcher) FetchFromURL(articleURL, tempPath string) (*epub.ReadableArticle, error) {
+func (s *stubArticleFetcher) FetchFromURL(articleURL string) (*epub.ReadableArticle, error) {
 	s.gotURL = articleURL
-	s.gotTempPath = tempPath
 	return s.article, s.err
 }
 
@@ -104,11 +102,10 @@ func (s *stubLinkdingClient) GetBookmark(id int) (*linkdinglib.Bookmark, error) 
 	return s.bookmark, s.bookmarkErr
 }
 
-func (s *stubArticleFetcher) FetchFromContent(title, author, content, tempPath string) (*epub.ReadableArticle, error) {
+func (s *stubArticleFetcher) FetchFromContent(title, author, content string) (*epub.ReadableArticle, error) {
 	s.gotTitle = title
 	s.gotAuthor = author
 	s.gotContent = content
-	s.gotTempPath = tempPath
 	return s.article, s.err
 }
 
@@ -344,9 +341,6 @@ func TestGetDownloadUsesInternalBuilder(t *testing.T) {
 	if fetcher.gotTitle != "An article" || fetcher.gotAuthor != "Ada, Grace" || fetcher.gotContent != "<p>body</p>" {
 		t.Errorf("FetchFromContent() called with title=%q author=%q content=%q, want title=%q author=%q content=%q",
 			fetcher.gotTitle, fetcher.gotAuthor, fetcher.gotContent, "An article", "Ada, Grace", "<p>body</p>")
-	}
-	if fetcher.gotTempPath == "" {
-		t.Error("FetchFromContent() called with empty tempPath")
 	}
 	if builder.gotArticle != wantArticle {
 		t.Errorf("Build() called with article = %#v, want the article returned by the fetcher", builder.gotArticle)
@@ -586,9 +580,6 @@ func TestGetLinkdingDownload(t *testing.T) {
 	}
 	if fetcher.gotURL != "https://example.com/article" {
 		t.Errorf("FetchFromURL() called with %q, want the bookmark's URL", fetcher.gotURL)
-	}
-	if fetcher.gotTempPath == "" {
-		t.Error("FetchFromURL() called with empty tempPath")
 	}
 	if builder.gotArticle != wantArticle {
 		t.Errorf("Build() called with article = %#v, want the article returned by the fetcher", builder.gotArticle)

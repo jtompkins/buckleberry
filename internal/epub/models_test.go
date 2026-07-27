@@ -7,10 +7,9 @@ import (
 
 func TestReadableArticleStringIsValidJSON(t *testing.T) {
 	article := ReadableArticle{
-		Title:      "A Title",
-		Author:     "An Author",
-		Content:    "<p>body</p>",
-		ImagePaths: map[string]string{"a.jpg": "/tmp/a.jpg"},
+		Title:   "A Title",
+		Author:  "An Author",
+		Content: "<p>body</p>",
 	}
 
 	var got ReadableArticle
