@@ -17,16 +17,22 @@ type wallabagClient interface {
 	Configure(*wallabag.WallabagSettings)
 }
 
-func NewHandler(settingsRepo settingsRepository, wallabag wallabagClient) *Handler {
+type linkdingPinger interface {
+	Ping() error
+}
+
+func NewHandler(settingsRepo settingsRepository, wallabag wallabagClient, linkding linkdingPinger) *Handler {
 	return &Handler{
 		settingsRepo:   settingsRepo,
 		wallabagClient: wallabag,
+		linkdingClient: linkding,
 	}
 }
 
 type Handler struct {
 	settingsRepo   settingsRepository
 	wallabagClient wallabagClient
+	linkdingClient linkdingPinger
 }
 
 func (h *Handler) Settings(c fiber.Ctx) error {
@@ -37,10 +43,11 @@ func (h *Handler) Settings(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).SendString("Couldn't load settings")
 	}
 
-	connected := h.wallabagClient.Ping() == nil
+	wallabagConnected := h.wallabagClient.Ping() == nil
+	linkdingConnected := h.linkdingClient.Ping() == nil
 
 	c.Set("Content-Type", "text/html")
-	settingsView := SettingsView(settings, c.Redirect().Messages(), connected)
+	settingsView := SettingsView(settings, c.Redirect().Messages(), wallabagConnected, linkdingConnected)
 	return settingsView.Render(c.Context(), c.Response().BodyWriter())
 }
 

@@ -7,7 +7,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-templ SettingsView(settings *Settings, messages []fiber.FlashMessage, goodConnection bool) {
+templ SettingsView(settings *Settings, messages []fiber.FlashMessage, wallabagConnected, linkdingConnected bool) {
 	@shared.Layout("Settings") {
 		<h1>Buckleberry Settings</h1>
 		if len(messages) > 0 {
@@ -21,7 +21,15 @@ templ SettingsView(settings *Settings, messages []fiber.FlashMessage, goodConnec
 		<ul>
 			<li>
 				<strong>Wallabag connection:</strong>
-				if goodConnection {
+				if wallabagConnected {
+					<span style="color: green">✅</span>
+				} else {
+					<span style="color: red">❌</span>
+				}
+			</li>
+			<li>
+				<strong>Linkding connection:</strong>
+				if linkdingConnected {
 					<span style="color: green">✅</span>
 				} else {
 					<span style="color: red">❌</span>
