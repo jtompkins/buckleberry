@@ -20,7 +20,19 @@ templ OnboardingView(settingsModel *settings.Settings, errorMsgs []string) {
 					</ul>
 				</div>
 			}
-			<form method="POST" action="/onboarding" x-data="{useWallabag: false, useLinkding: false}">
+			{{
+				// Each integration partial owns its own Alpine scope, so the
+				// form doesn't declare one. On a re-render these carry back
+				// whatever the user already typed.
+				var wallabagSettings *wallabag.WallabagSettings
+				var linkdingSettings *linkding.LinkdingSettings
+
+				if settingsModel != nil {
+					wallabagSettings = &settingsModel.WallabagSettings
+					linkdingSettings = &settingsModel.LinkdingSettings
+				}
+			}}
+			<form method="POST" action="/onboarding">
 				<h2>Authentication</h2>
 				<p>
 					<label for="name">Username</label>
@@ -52,33 +64,9 @@ templ OnboardingView(settingsModel *settings.Settings, errorMsgs []string) {
 						required
 					/>
 				</p>
-				<p>
-					<label>
-						<input
-							type="checkbox"
-							name="use-wallabag"
-							x-model="useWallabag"
-						/>
-						Connect to Wallabag?
-					</label>
-				</p>
-				<div id="wallabag-container" x-show="useWallabag">
-					@wallabag.WallabagSettingsPartial(nil)
-				</div>
-				<p>
-					<label>
-						<input
-							type="checkbox"
-							name="use-linkding"
-							x-model="useLinkding"
-						/>
-						Connect to Linkding?
-					</label>
-				</p>
-				<div id="linkding-container" x-show="useLinkding">
-					@linkding.LinkdingSettingsPartial(nil)
-				</div>
-				<input type="submit" value="Get Started" x-bind:disabled="!useWallabag && !useLinkding"/>
+				@wallabag.WallabagSettingsPartial(wallabagSettings)
+				@linkding.LinkdingSettingsPartial(linkdingSettings)
+				<input type="submit" value="Get Started"/>
 			</form>
 		</div>
 	}

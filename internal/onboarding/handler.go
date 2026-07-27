@@ -1,6 +1,7 @@
 package onboarding
 
 import (
+	"buckleberry/internal/linkding"
 	"buckleberry/internal/settings"
 	"buckleberry/internal/wallabag"
 
@@ -18,13 +19,18 @@ type wallabagConfigurer interface {
 	Configure(*wallabag.WallabagSettings)
 }
 
+type linkdingConfigurer interface {
+	Configure(*linkding.LinkdingSettings)
+}
+
 type Handler struct {
 	settingsRepo settingsRepo
 	wallabag     wallabagConfigurer
+	linkding     linkdingConfigurer
 }
 
-func NewHandler(repo settingsRepo, wallabag wallabagConfigurer) *Handler {
-	return &Handler{settingsRepo: repo, wallabag: wallabag}
+func NewHandler(repo settingsRepo, wallabag wallabagConfigurer, linkding linkdingConfigurer) *Handler {
+	return &Handler{settingsRepo: repo, wallabag: wallabag, linkding: linkding}
 }
 
 func (h *Handler) Onboarding(c fiber.Ctx) error {
@@ -43,10 +49,23 @@ func (h *Handler) HandleOnboarding(c fiber.Ctx) error {
 
 	repeatedPassword := c.FormValue("password-again")
 
+	var errorMsgs []string
+
 	if formSettings.Password != repeatedPassword {
+		errorMsgs = append(errorMsgs, "Passwords don't match")
+	}
+
+	// An install with no source has nothing to serve, so require at least one.
+	// This is enforced here rather than in the form because the integration
+	// partials each own their own Alpine scope.
+	if !formSettings.UseWallabag && !formSettings.UseLinkding {
+		errorMsgs = append(errorMsgs, "Connect at least one of Wallabag or Linkding")
+	}
+
+	if len(errorMsgs) > 0 {
 		c.Set("Content-Type", "text/html")
 
-		onboardingView := OnboardingView(&formSettings, []string{"Passwords don't match"})
+		onboardingView := OnboardingView(&formSettings, errorMsgs)
 
 		return onboardingView.Render(c.Context(), c.Response().BodyWriter())
 	}
@@ -69,6 +88,10 @@ func (h *Handler) HandleOnboarding(c fiber.Ctx) error {
 
 	if formSettings.UseWallabag {
 		h.wallabag.Configure(&formSettings.WallabagSettings)
+	}
+
+	if formSettings.UseLinkding {
+		h.linkding.Configure(&formSettings.LinkdingSettings)
 	}
 
 	return c.Redirect().To("/settings")

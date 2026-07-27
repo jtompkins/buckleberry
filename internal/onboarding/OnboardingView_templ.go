@@ -81,7 +81,17 @@ func OnboardingView(settingsModel *settings.Settings, errorMsgs []string) templ.
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<form method=\"POST\" action=\"/onboarding\" x-data=\"{useWallabag: false, useLinkding: false}\"><h2>Authentication</h2><p><label for=\"name\">Username</label> <input type=\"text\" name=\"username\" placeholder=\"username\" required")
+			// Each integration partial owns its own Alpine scope, so the
+			// form doesn't declare one. On a re-render these carry back
+			// whatever the user already typed.
+			var wallabagSettings *wallabag.WallabagSettings
+			var linkdingSettings *linkding.LinkdingSettings
+
+			if settingsModel != nil {
+				wallabagSettings = &settingsModel.WallabagSettings
+				linkdingSettings = &settingsModel.LinkdingSettings
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<form method=\"POST\" action=\"/onboarding\"><h2>Authentication</h2><p><label for=\"name\">Username</label> <input type=\"text\" name=\"username\" placeholder=\"username\" required")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -93,7 +103,7 @@ func OnboardingView(settingsModel *settings.Settings, errorMsgs []string) templ.
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(settingsModel.Username)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/onboarding/OnboardingView.templ`, Line: 33, Col: 37}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/onboarding/OnboardingView.templ`, Line: 45, Col: 37}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 				if templ_7745c5c3_Err != nil {
@@ -104,23 +114,19 @@ func OnboardingView(settingsModel *settings.Settings, errorMsgs []string) templ.
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "></p><p><label for=\"password\">Password</label> <input type=\"password\" name=\"password\" placeholder=\"password\" required></p><p><label for=\"password\">Password</label> <input type=\"password\" name=\"password-again\" placeholder=\"repeat password\" required></p><p><label><input type=\"checkbox\" name=\"use-wallabag\" x-model=\"useWallabag\"> Connect to Wallabag?</label></p><div id=\"wallabag-container\" x-show=\"useWallabag\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "></p><p><label for=\"password\">Password</label> <input type=\"password\" name=\"password\" placeholder=\"password\" required></p><p><label for=\"password\">Password</label> <input type=\"password\" name=\"password-again\" placeholder=\"repeat password\" required></p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = wallabag.WallabagSettingsPartial(nil).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = wallabag.WallabagSettingsPartial(wallabagSettings).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div><p><label><input type=\"checkbox\" name=\"use-linkding\" x-model=\"useLinkding\"> Connect to Linkding?</label></p><div id=\"linkding-container\" x-show=\"useLinkding\">")
+			templ_7745c5c3_Err = linkding.LinkdingSettingsPartial(linkdingSettings).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = linkding.LinkdingSettingsPartial(nil).Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div><input type=\"submit\" value=\"Get Started\" x-bind:disabled=\"!useWallabag && !useLinkding\"></form></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<input type=\"submit\" value=\"Get Started\"></form></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

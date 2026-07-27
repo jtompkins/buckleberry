@@ -2,11 +2,13 @@ package onboarding
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"buckleberry/internal/linkding"
 	"buckleberry/internal/settings"
 	"buckleberry/internal/wallabag"
 
@@ -40,6 +42,14 @@ type stubConfigurer struct {
 }
 
 func (s *stubConfigurer) Configure(in *wallabag.WallabagSettings) {
+	s.configured = in
+}
+
+type stubLinkdingConfigurer struct {
+	configured *linkding.LinkdingSettings
+}
+
+func (s *stubLinkdingConfigurer) Configure(in *linkding.LinkdingSettings) {
 	s.configured = in
 }
 
@@ -78,7 +88,7 @@ func validOnboardingForm() map[string]string {
 func TestHandleOnboardingSuccess(t *testing.T) {
 	repo := &stubOnboardingRepo{}
 	configurer := &stubConfigurer{}
-	handler := NewHandler(repo, configurer)
+	handler := NewHandler(repo, configurer, &stubLinkdingConfigurer{})
 
 	app := fiber.New()
 	app.Post("/onboarding", handler.HandleOnboarding)
@@ -117,7 +127,7 @@ func TestHandleOnboardingSuccess(t *testing.T) {
 func TestHandleOnboardingPasswordMismatch(t *testing.T) {
 	repo := &stubOnboardingRepo{}
 	configurer := &stubConfigurer{}
-	handler := NewHandler(repo, configurer)
+	handler := NewHandler(repo, configurer, &stubLinkdingConfigurer{})
 
 	app := fiber.New()
 	app.Post("/onboarding", handler.HandleOnboarding)
@@ -198,7 +208,7 @@ func TestRequireOnboardedError(t *testing.T) {
 
 func TestHandleOnboardingPersistsLinkdingSettings(t *testing.T) {
 	repo := &stubOnboardingRepo{}
-	handler := NewHandler(repo, &stubConfigurer{})
+	handler := NewHandler(repo, &stubConfigurer{}, &stubLinkdingConfigurer{})
 
 	app := fiber.New()
 	app.Post("/onboarding", handler.HandleOnboarding)
@@ -235,7 +245,7 @@ func TestHandleOnboardingPersistsLinkdingSettings(t *testing.T) {
 func TestHandleOnboardingSkipsWallabagConfigureWhenDisabled(t *testing.T) {
 	repo := &stubOnboardingRepo{}
 	configurer := &stubConfigurer{}
-	handler := NewHandler(repo, configurer)
+	handler := NewHandler(repo, configurer, &stubLinkdingConfigurer{})
 
 	app := fiber.New()
 	app.Post("/onboarding", handler.HandleOnboarding)
@@ -256,5 +266,109 @@ func TestHandleOnboardingSkipsWallabagConfigureWhenDisabled(t *testing.T) {
 	}
 	if configurer.configured != nil {
 		t.Error("Configure() was called even though Wallabag is disabled")
+	}
+}
+
+// The integration partials are rendered with no settings to display on a
+// fresh install, which must not panic.
+func TestOnboardingRendersOnFreshInstall(t *testing.T) {
+	handler := NewHandler(&stubOnboardingRepo{}, &stubConfigurer{}, &stubLinkdingConfigurer{})
+
+	app := fiber.New()
+	app.Get("/onboarding", handler.Onboarding)
+
+	res, err := app.Test(httptest.NewRequest(http.MethodGet, "/onboarding", nil))
+	if err != nil {
+		t.Fatalf("GET /onboarding: %v", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d, want %d", res.StatusCode, fiber.StatusOK)
+	}
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	html := string(body)
+
+	// Each integration checkbox lives in its own partial, so exactly one of
+	// each must be rendered -- a duplicate would submit the field twice.
+	for _, field := range []string{`name="use-wallabag"`, `name="use-linkding"`} {
+		if got := strings.Count(html, field); got != 1 {
+			t.Errorf("rendered %s %d times, want exactly 1", field, got)
+		}
+	}
+}
+
+func TestHandleOnboardingConfiguresLinkding(t *testing.T) {
+	repo := &stubOnboardingRepo{}
+	linkdingConfigurer := &stubLinkdingConfigurer{}
+	wallabagConfigurer := &stubConfigurer{}
+	handler := NewHandler(repo, wallabagConfigurer, linkdingConfigurer)
+
+	app := fiber.New()
+	app.Post("/onboarding", handler.HandleOnboarding)
+
+	res := postForm(t, app, "/onboarding", map[string]string{
+		"username":              "reader",
+		"password":              "secret",
+		"password-again":        "secret",
+		"use-linkding":          "on",
+		"linkding-instance-url": "https://linkding.example.com",
+		"linkding-api-key":      "linkding-key",
+	})
+	defer res.Body.Close()
+
+	if res.StatusCode != fiber.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", res.StatusCode, fiber.StatusSeeOther)
+	}
+	// Without this the Linkding client stays unconfigured until a restart.
+	if linkdingConfigurer.configured == nil {
+		t.Fatal("Configure() was not called on the Linkding client after onboarding")
+	}
+	if linkdingConfigurer.configured.LinkdingInstanceURL == nil ||
+		*linkdingConfigurer.configured.LinkdingInstanceURL != "https://linkding.example.com" {
+		t.Errorf("configured URL = %v, want the submitted URL", linkdingConfigurer.configured.LinkdingInstanceURL)
+	}
+	if wallabagConfigurer.configured != nil {
+		t.Error("Configure() was called on the Wallabag client, which is disabled")
+	}
+}
+
+// An install with no source selected has nothing to serve.
+func TestHandleOnboardingRequiresASource(t *testing.T) {
+	repo := &stubOnboardingRepo{}
+	wallabagConfigurer := &stubConfigurer{}
+	linkdingConfigurer := &stubLinkdingConfigurer{}
+	handler := NewHandler(repo, wallabagConfigurer, linkdingConfigurer)
+
+	app := fiber.New()
+	app.Post("/onboarding", handler.HandleOnboarding)
+
+	res := postForm(t, app, "/onboarding", map[string]string{
+		"username":       "reader",
+		"password":       "secret",
+		"password-again": "secret",
+	})
+	defer res.Body.Close()
+
+	if res.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d, want %d (re-rendered form)", res.StatusCode, fiber.StatusOK)
+	}
+	if repo.created != nil {
+		t.Error("Create() should not be called when no source is selected")
+	}
+	if wallabagConfigurer.configured != nil || linkdingConfigurer.configured != nil {
+		t.Error("no client should be configured when no source is selected")
+	}
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if !strings.Contains(string(body), "at least one") {
+		t.Error("re-rendered form does not explain that a source is required")
 	}
 }
