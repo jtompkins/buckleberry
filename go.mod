@@ -9,7 +9,6 @@ require (
 	github.com/a-h/templ v0.3.1020
 	github.com/go-shiori/go-epub v1.2.1
 	github.com/gofiber/fiber/v3 v3.3.0
-	github.com/google/uuid v1.6.0
 	github.com/gorilla/feeds v1.2.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/piero-vic/go-linkding v0.3.0
@@ -34,6 +33,7 @@ require (
 	github.com/gofiber/utils/v2 v2.0.6 // indirect
 	github.com/gofrs/uuid/v5 v5.0.0 // indirect
 	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/itlightning/dateparse v0.2.1 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
