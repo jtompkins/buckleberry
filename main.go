@@ -109,6 +109,29 @@ func main() {
 	opds.Get("/linkding/", opdsHandler.RequireLinkding, opdsHandler.GetUnreadLinkdingFeed)
 	opds.Get("/linkding/:id", opdsHandler.RequireLinkding, opdsHandler.GetLinkdingDownload)
 
+	app.Get("/healthcheck", onboardingMiddleware.RequireOnboarded, func(c fiber.Ctx) error {
+		settings, err := settingsRepo.Get()
+
+		if err != nil {
+			fiberlog.Error("Health check: unable to fetch settings: ", err)
+			return c.SendStatus(fiber.StatusInternalServerError)
+		}
+
+		if settings.UseWallabag {
+			if err = wallabagClient.Ping(); err != nil {
+				return c.SendStatus(fiber.StatusFailedDependency)
+			}
+		}
+
+		if settings.UseLinkding {
+			if err = linkdingClient.Ping(); err != nil {
+				return c.SendStatus(fiber.StatusFailedDependency)
+			}
+		}
+
+		return c.SendStatus(fiber.StatusOK)
+	})
+
 	port := viper.GetString("PORT")
 	log.Fatal(app.Listen(":" + port))
 }
