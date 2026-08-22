@@ -1,10 +1,8 @@
 package onboarding
 
 import (
-	"buckleberry/internal/linkding"
 	"buckleberry/internal/settings"
 	"buckleberry/internal/shared"
-	"buckleberry/internal/wallabag"
 )
 
 templ OnboardingView(settingsModel *settings.Settings, errorMsgs []string) {
@@ -24,8 +22,8 @@ templ OnboardingView(settingsModel *settings.Settings, errorMsgs []string) {
 				// Each integration partial owns its own Alpine scope, so the
 				// form doesn't declare one. On a re-render these carry back
 				// whatever the user already typed.
-				var wallabagSettings *wallabag.WallabagSettings
-				var linkdingSettings *linkding.LinkdingSettings
+				var wallabagSettings *settings.WallabagSettings
+				var linkdingSettings *settings.LinkdingSettings
 
 				if settingsModel != nil {
 					wallabagSettings = &settingsModel.WallabagSettings
@@ -64,8 +62,8 @@ templ OnboardingView(settingsModel *settings.Settings, errorMsgs []string) {
 						required
 					/>
 				</p>
-				@wallabag.WallabagSettingsPartial(wallabagSettings)
-				@linkding.LinkdingSettingsPartial(linkdingSettings)
+				@shared.WallabagSettingsPartial(wallabagSettings)
+				@shared.LinkdingSettingsPartial(linkdingSettings)
 				<input type="submit" value="Get Started"/>
 			</form>
 		</div>

@@ -30,9 +30,6 @@ func (m *Middleware) RequireOnboarded(c fiber.Ctx) error {
 	return c.Next()
 }
 
-// RedirectIfOnboarded guards the onboarding routes so that a server which has
-// already been set up can't be onboarded a second time (which would insert a
-// duplicate settings row).
 func (m *Middleware) RedirectIfOnboarded(c fiber.Ctx) error {
 	isOnboarded, err := m.settingsRepo.IsOnboarded()
 

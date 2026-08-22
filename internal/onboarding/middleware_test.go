@@ -1,49 +1,79 @@
 package onboarding
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
-type stubSettingsReader struct {
-	onboarded bool
-	err       error
-}
-
-func (s *stubSettingsReader) IsOnboarded() (bool, error) {
-	if s.err != nil {
-		return false, s.err
-	}
-
-	return s.onboarded, nil
-}
-
-func TestMiddleware(t *testing.T) {
-	repo := &stubSettingsReader{false, nil}
-
-	middleware := NewMiddleware(repo)
-
+func setupFiberApp(mw *Middleware) *fiber.App {
 	app := fiber.New()
 
-	app.Get("/test", middleware.RequireOnboarded, func(c fiber.Ctx) error {
+	app.Get("/notonboarded", mw.RequireOnboarded, func(c fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
-	res, err := app.Test(httptest.NewRequest("GET", "/test", nil))
+	app.Get("/onboarded", mw.RedirectIfOnboarded, func(c fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusOK)
+	})
 
-	if err != nil {
-		t.Fatal(err)
-	}
+	return app
+}
 
-	defer res.Body.Close()
+type mockSettingsReader struct {
+	mock.Mock
+}
 
-	if res.StatusCode != fiber.StatusSeeOther {
-		t.Errorf("status == %d, want %d", res.StatusCode, fiber.StatusFound)
-	}
+func (m *mockSettingsReader) IsOnboarded() (bool, error) {
+	args := m.Called()
+	return args.Bool(0), args.Error(1)
+}
 
-	if location := res.Header.Get("Location"); location != "/onboarding" {
-		t.Errorf("Location = %q, want /onboarding", location)
-	}
+func TestReturnsErrorIfSettingsFetchFails(t *testing.T) {
+	mockRepo := new(mockSettingsReader)
+	mockRepo.On("IsOnboarded").Return(false, fmt.Errorf("failed"))
+
+	mw := NewMiddleware(mockRepo)
+
+	app := setupFiberApp(mw)
+
+	res, _ := app.Test(httptest.NewRequest("GET", "/onboarded", nil))
+
+	require.Equal(t, 500, res.StatusCode)
+}
+
+func TestRedirectsIfNotOnboarded(t *testing.T) {
+	mockRepo := new(mockSettingsReader)
+	mockRepo.On("IsOnboarded").Return(false, nil)
+
+	mw := NewMiddleware(mockRepo)
+	app := setupFiberApp(mw)
+
+	res, err := app.Test(httptest.NewRequest("GET", "/notonboarded", nil))
+
+	require.Nil(t, err)
+
+	url, _ := res.Location()
+
+	require.Equal(t, "/onboarding", url.Path)
+}
+
+func TestDoesntAllowOnboardingIfAlreadyOnboarded(t *testing.T) {
+	mockRepo := new(mockSettingsReader)
+	mockRepo.On("IsOnboarded").Return(true, nil)
+
+	mw := NewMiddleware(mockRepo)
+	app := setupFiberApp(mw)
+
+	res, err := app.Test(httptest.NewRequest("GET", "/onboarded", nil))
+
+	require.Nil(t, err)
+
+	url, _ := res.Location()
+
+	require.Equal(t, "/", url.Path)
 }
