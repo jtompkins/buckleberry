@@ -1,6 +1,12 @@
 # buckleberry
 
-Buckleberry is a simple service that exposes content from several common self-hosting services via an Open Publishing Distribution System (OPDS) interface.
+Buckleberry is a simple service that exposes content from several common self-hosting services via an Open Publishing Distribution System (OPDS) interface. I built this service mostly for myself, and I use it to get articles onto my Xteink X4, but it should work with any standard OPDS client.
+
+### Supported Services
+
+- [X] Wallabag
+- [X] Linkding
+- [ ] ??
 
 ## AI Usage Disclosure
 
@@ -8,19 +14,29 @@ The vast majority of this repository is human-generated code, but some of it - m
 
 ## Running
 
-Buckleberry comes with a Dockerfile that can be used to run the app. If you'd like to run it manually, the makefile provides a `run` command.
+I run Buckleberry in a Coolify instance, and so it comes with a Dockerfile to facilitate that. The Dockerfile is a "distro-less" image; it's completely self-contained and very small. If you need to run the app manually, there's a Make directive:
 
-On first launch, open the server in a browser and complete onboarding. You'll set your admin login and configure at least one content source (Wallabag, Linkding, or both). Password confirmation is required.
+```bash
+make run
+```
+
+When debugging the app, there's also a handy `watch` directive that spins up a proxy server to reboot the app whenever you make a file change:
+
+```bash
+make watch
+```
+
+The first time you run the app, you'll need to onboard by setting up connections to one or more of the supported services. You'll also set up a username and password; these are used both to log in and to authenticate the OPDS server.
 
 ## Configuration
 
-Set via environment variables or a `.env` file:
+The app has a few optional env vars and one required one:
 
 | Variable        | Default                  | Description                                        |
 | --------------- | ------------------------ | -------------------------------------------------- |
-| `PORT`          | `8080`                   | Port to listen on.                                 |
-| `BASE_URL`      | `http://localhost:$PORT` | Public URL, used to build OPDS feed links.         |
+| **`BASE_URL`**      | `http://localhost:$PORT` | **Required**. The base public URL for OPDS feed links.         |
 | `DB_PATH`       | `./buckleberry.db`       | SQLite database path.                              |
+| `PORT`          | `8080`                   | Port to listen on.                                 |
 
 ## Deployment
 
