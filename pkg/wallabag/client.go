@@ -6,8 +6,15 @@ import (
 	"github.com/Strubbl/wallabago/v9"
 )
 
+type WallabagConfig struct {
+	WallabagInstanceURL  string
+	WallabagClientID     string
+	WallabagClientSecret string
+	WallabagUsername     string
+	WallabagPassword     string
+}
+
 type Client struct {
-	config       *WallabagSettings
 	isConfigured bool
 }
 
@@ -17,33 +24,21 @@ func NewClient() *Client {
 	}
 }
 
-func (c *Client) Configure(wallabagConfig *WallabagSettings) {
-	c.config = wallabagConfig
-
-	// New credentials haven't reached wallabago's global config yet, so the
-	// next call has to push them through again.
-	c.isConfigured = false
-}
-
-func (c *Client) configureWallabago() {
+func (c *Client) Configure(wallabagConfig WallabagConfig) {
 	wallabago.SetConfig(wallabago.NewWallabagConfig(
-		*c.config.WallabagInstanceURL,
-		*c.config.WallabagClientID,
-		*c.config.WallabagClientSecret,
-		*c.config.WallabagUsername,
-		*c.config.WallabagPassword,
+		wallabagConfig.WallabagInstanceURL,
+		wallabagConfig.WallabagClientID,
+		wallabagConfig.WallabagClientSecret,
+		wallabagConfig.WallabagUsername,
+		wallabagConfig.WallabagPassword,
 	))
 
 	c.isConfigured = true
 }
 
 func (c *Client) GetEntries() (*wallabago.Entries, error) {
-	if c.config == nil {
-		return nil, fmt.Errorf("client not configured, please call Configure() first")
-	}
-
 	if !c.isConfigured {
-		c.configureWallabago()
+		return nil, fmt.Errorf("client not configured, call Configure() first")
 	}
 
 	entries, err := wallabago.GetEntries(wallabago.APICall, 0, -1, "", "", -1, -1, "", -1, -1, "metadata", "")
@@ -55,15 +50,9 @@ func (c *Client) GetEntries() (*wallabago.Entries, error) {
 	return &entries, nil
 }
 
-// Ping checks connectivity to the configured Wallabag instance by making a
-// lightweight authenticated API call.
 func (c *Client) Ping() error {
-	if c.config == nil {
-		return fmt.Errorf("client not configured, please call Configure() first")
-	}
-
 	if !c.isConfigured {
-		c.configureWallabago()
+		return fmt.Errorf("client not configured, please call Configure() first")
 	}
 
 	if _, err := wallabago.GetTags(wallabago.APICall); err != nil {
@@ -74,12 +63,8 @@ func (c *Client) Ping() error {
 }
 
 func (c *Client) GetEntry(id int) (*wallabago.Item, error) {
-	if c.config == nil {
-		return nil, fmt.Errorf("client not configured, please call Configure() first")
-	}
-
 	if !c.isConfigured {
-		c.configureWallabago()
+		return nil, fmt.Errorf("client not configured, please call Configure() first")
 	}
 
 	entry, err := wallabago.GetEntry(wallabago.APICall, id)
@@ -92,12 +77,8 @@ func (c *Client) GetEntry(id int) (*wallabago.Item, error) {
 }
 
 func (c *Client) ExportEntry(id int, format string) ([]byte, error) {
-	if c.config == nil {
-		return nil, fmt.Errorf("client not configured, please call Configure() first")
-	}
-
 	if !c.isConfigured {
-		c.configureWallabago()
+		return nil, fmt.Errorf("client not configured, please call Configure() first")
 	}
 
 	epubBytes, err := wallabago.ExportEntry(wallabago.APICall, id, format)

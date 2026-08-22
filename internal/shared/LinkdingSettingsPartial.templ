@@ -1,6 +1,8 @@
-package linkding
+package shared
 
-templ LinkdingSettingsPartial(settings *LinkdingSettings) {
+import "buckleberry/internal/settings"
+
+templ LinkdingSettingsPartial(settings *settings.LinkdingSettings) {
 	{{
 		// Onboarding renders this partial with no settings to show yet.
 		data := map[string]bool{

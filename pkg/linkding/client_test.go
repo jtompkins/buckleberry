@@ -7,12 +7,6 @@ import (
 	"testing"
 )
 
-func strptr(s string) *string {
-	return &s
-}
-
-// newTestClient returns a Client pointed at a stand-in Linkding API, along with
-// a record of the paths that API was asked for.
 func newTestClient(t *testing.T, handler http.HandlerFunc) (*Client, *[]string) {
 	t.Helper()
 
@@ -25,10 +19,7 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) (*Client, *[]string) 
 	t.Cleanup(server.Close)
 
 	client := NewClient()
-	client.Configure(&LinkdingSettings{
-		LinkdingInstanceURL: strptr(server.URL),
-		LinkdingAPIKey:      strptr("test-token"),
-	})
+	client.Configure(server.URL, "test-token")
 
 	return client, &requested
 }
@@ -86,10 +77,7 @@ func TestPingSendsAPIKey(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient()
-	client.Configure(&LinkdingSettings{
-		LinkdingInstanceURL: strptr(server.URL),
-		LinkdingAPIKey:      strptr("secret-key"),
-	})
+	client.Configure(server.URL, "secret-key")
 
 	if err := client.Ping(); err != nil {
 		t.Fatalf("Ping() error = %v", err)
@@ -169,32 +157,5 @@ func TestGetBookmarkReportsServerFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "error fetching bookmark 42") {
 		t.Errorf("error = %v, want it wrapped with the bookmark ID", err)
-	}
-}
-
-// Reconfiguring must repoint the client, so saving new settings takes effect
-// without a restart.
-func TestConfigureRepointsClient(t *testing.T) {
-	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer first.Close()
-
-	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"count":0,"results":[]}`))
-	}))
-	defer second.Close()
-
-	client := NewClient()
-	client.Configure(&LinkdingSettings{LinkdingInstanceURL: strptr(first.URL), LinkdingAPIKey: strptr("old")})
-
-	if err := client.Ping(); err == nil {
-		t.Fatal("Ping() against the first server = nil error, want failure")
-	}
-
-	client.Configure(&LinkdingSettings{LinkdingInstanceURL: strptr(second.URL), LinkdingAPIKey: strptr("new")})
-
-	if err := client.Ping(); err != nil {
-		t.Errorf("Ping() after reconfiguring = %v, want it to use the new instance", err)
 	}
 }

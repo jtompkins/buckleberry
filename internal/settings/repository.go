@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"buckleberry/internal/database"
+	"buckleberry/pkg/database"
 )
 
 type Repository struct {

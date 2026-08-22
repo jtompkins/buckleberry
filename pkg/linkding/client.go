@@ -14,8 +14,8 @@ func NewClient() *Client {
 	return &Client{}
 }
 
-func (c *Client) Configure(settings *LinkdingSettings) {
-	c.client = linkdinglib.NewClient(*settings.LinkdingInstanceURL, *settings.LinkdingAPIKey)
+func (c *Client) Configure(linkdingInstanceURL, linkdingAPIKey string) {
+	c.client = linkdinglib.NewClient(linkdingInstanceURL, linkdingAPIKey)
 }
 
 func (c *Client) Ping() error {

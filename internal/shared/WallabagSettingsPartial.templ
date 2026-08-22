@@ -1,6 +1,8 @@
-package wallabag
+package shared
 
-templ WallabagSettingsPartial(settings *WallabagSettings) {
+import "buckleberry/internal/settings"
+
+templ WallabagSettingsPartial(settings *settings.WallabagSettings) {
 	{{
 		// Onboarding renders this partial with no settings to show yet.
 		data := map[string]bool{
