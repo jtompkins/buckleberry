@@ -5,14 +5,13 @@ import (
 	"log"
 	"strings"
 
+	"buckleberry/internal/adapter"
 	"buckleberry/internal/auth"
-	"buckleberry/internal/database"
-	"buckleberry/internal/epub"
-	"buckleberry/internal/linkding"
+	"buckleberry/internal/home"
 	"buckleberry/internal/onboarding"
 	"buckleberry/internal/opds"
 	"buckleberry/internal/settings"
-	"buckleberry/internal/wallabag"
+	"buckleberry/pkg/database"
 
 	"github.com/gofiber/fiber/v3"
 	fiberlog "github.com/gofiber/fiber/v3/log"
@@ -43,35 +42,11 @@ func main() {
 	}
 
 	settingsRepo := settings.NewRepository(db)
-	wallabagClient := wallabag.NewClient()
-	linkdingClient := linkding.NewClient()
-	articleFetcher := epub.ArticleFetcher{}
-	epubBuilder := epub.EPUBBuilder{}
-
-	isOnboarded, err := settingsRepo.IsOnboarded()
-
-	if err != nil {
-		log.Fatal("Failed to find is onboarded: ", err)
-	} else if isOnboarded {
-		currentSettings, err := settingsRepo.Get()
-
-		if err != nil {
-			log.Fatal("getting settings: ", err.Error())
-		}
-
-		if currentSettings.UseWallabag {
-			wallabagClient.Configure(&currentSettings.WallabagSettings)
-		}
-
-		if currentSettings.UseLinkding {
-			linkdingClient.Configure(&currentSettings.LinkdingSettings)
-		}
-	}
 
 	authHandler := auth.NewHandler(settingsRepo)
-	settingsHandler := settings.NewHandler(settingsRepo, wallabagClient, linkdingClient)
-	opdsHandler := opds.NewHandler(settingsRepo, wallabagClient, linkdingClient, articleFetcher, epubBuilder, baseURL)
-	onboardingHandler := onboarding.NewHandler(settingsRepo, wallabagClient, linkdingClient)
+	homeHandler := home.NewHandler(settingsRepo)
+	opdsHandler := opds.NewHandler(settingsRepo, baseURL)
+	onboardingHandler := onboarding.NewHandler(settingsRepo)
 
 	app := fiber.New()
 
@@ -91,46 +66,23 @@ func main() {
 
 	sessionAuthMiddleware := auth.NewMiddleware(settingsRepo)
 	onboardingMiddleware := onboarding.NewMiddleware(settingsRepo)
+	adapterInjectionMiddleware := adapter.NewMiddleware(settingsRepo)
 
-	app.Get("/", onboardingMiddleware.RequireOnboarded, authHandler.Login)
+	app.Get("/login", onboardingMiddleware.RequireOnboarded, authHandler.Login)
 	app.Post("/login", onboardingMiddleware.RequireOnboarded, authHandler.HandleLogin)
 
-	app.Get("/settings", onboardingMiddleware.RequireOnboarded, sessionAuthMiddleware.RequireAuth, settingsHandler.Settings)
-	app.Post("/settings", onboardingMiddleware.RequireOnboarded, sessionAuthMiddleware.RequireAuth, settingsHandler.UpdateSettings)
+	app.Get("/", onboardingMiddleware.RequireOnboarded, sessionAuthMiddleware.RequireAuth, adapterInjectionMiddleware.InjectAdapters, homeHandler.Home)
+	app.Post("/settings", onboardingMiddleware.RequireOnboarded, sessionAuthMiddleware.RequireAuth, homeHandler.UpdateSettings)
 
 	app.Get("/onboarding", onboardingMiddleware.RedirectIfOnboarded, onboardingHandler.Onboarding)
 	app.Post("/onboarding", onboardingMiddleware.RedirectIfOnboarded, onboardingHandler.HandleOnboarding)
 
 	opds := app.Group("/opds", onboardingMiddleware.RequireOnboarded, basicAuthMiddleware)
 
-	opds.Get("/", opdsHandler.GetNavigationFeeds)
-	opds.Get("/wallabag/", opdsHandler.RequireWallabag, opdsHandler.GetUnreadWallabagFeed)
-	opds.Get("/wallabag/:id", opdsHandler.RequireWallabag, opdsHandler.GetWallabagDownload)
-	opds.Get("/linkding/", opdsHandler.RequireLinkding, opdsHandler.GetUnreadLinkdingFeed)
-	opds.Get("/linkding/:id", opdsHandler.RequireLinkding, opdsHandler.GetLinkdingDownload)
-
-	app.Get("/healthcheck", onboardingMiddleware.RequireOnboarded, func(c fiber.Ctx) error {
-		settings, err := settingsRepo.Get()
-
-		if err != nil {
-			fiberlog.Error("Health check: unable to fetch settings: ", err)
-			return c.SendStatus(fiber.StatusInternalServerError)
-		}
-
-		if settings.UseWallabag {
-			if err = wallabagClient.Ping(); err != nil {
-				return c.SendStatus(fiber.StatusFailedDependency)
-			}
-		}
-
-		if settings.UseLinkding {
-			if err = linkdingClient.Ping(); err != nil {
-				return c.SendStatus(fiber.StatusFailedDependency)
-			}
-		}
-
-		return c.SendStatus(fiber.StatusOK)
-	})
+	opds.Get("/", adapterInjectionMiddleware.InjectAdapters, opdsHandler.GetTopLevelNavigationFeeds)
+	opds.Get("/:adapter/", adapterInjectionMiddleware.InjectAdapters, opdsHandler.GetNavigationFeedsForAdapter)
+	opds.Get("/:adapter/:feed", adapterInjectionMiddleware.InjectAdapters, opdsHandler.GetAcquisitionFeedForAdapter)
+	opds.Get("/:adapter/:feed/:id", adapterInjectionMiddleware.InjectAdapters, opdsHandler.DownloadArticle)
 
 	port := viper.GetString("PORT")
 	log.Fatal(app.Listen(":" + port))
