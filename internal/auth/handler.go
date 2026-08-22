@@ -33,7 +33,7 @@ func (h *Handler) HandleLogin(c fiber.Ctx) error {
 	settings, err := h.settingsRepo.Get()
 
 	if err != nil {
-		return c.Redirect().With("error", "Couldn't fetch settings").To("/")
+		return c.Redirect().With("error", "Couldn't fetch settings").To("/login")
 	}
 
 	compareResult := bcrypt.CompareHashAndPassword([]byte(settings.Password), []byte(password))
@@ -48,8 +48,8 @@ func (h *Handler) HandleLogin(c fiber.Ctx) error {
 		// Add authentication data to existing session
 		sess.Set("authenticated", true)
 
-		return c.Redirect().To("/settings")
+		return c.Redirect().To("/")
 	}
 
-	return c.Redirect().With("error", "Invalid credentials").To("/")
+	return c.Redirect().With("error", "Invalid credentials").To("/login")
 }

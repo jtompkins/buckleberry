@@ -18,7 +18,7 @@ type Middleware struct {
 func (m *Middleware) RequireAuth(c fiber.Ctx) error {
 	sess := session.FromContext(c)
 	if sess == nil || sess.Get("authenticated") != true {
-		return c.Redirect().To("/")
+		return c.Redirect().To("/login")
 	}
 
 	return c.Next()
