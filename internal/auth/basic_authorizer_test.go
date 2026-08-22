@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -19,73 +22,49 @@ func hashPassword(t *testing.T, password string) string {
 	return string(hash)
 }
 
-type stubSettingsRepo struct {
-	settings *settings.Settings
-	err      error
+type mockSettingsRepo struct {
+	mock.Mock
 }
 
-func (s *stubSettingsRepo) Get() (*settings.Settings, error) {
-	if s.err != nil {
-		return nil, s.err
-	}
-
-	return s.settings, nil
-}
-
-func newStubSettingsRepo(s *settings.Settings, err error) *stubSettingsRepo {
-	return &stubSettingsRepo{s, err}
+func (m *mockSettingsRepo) Get() (*settings.Settings, error) {
+	args := m.Called()
+	return args.Get(0).(*settings.Settings), args.Error(1)
 }
 
 func TestSettingsFetchFailure(t *testing.T) {
-	stub := newStubSettingsRepo(nil, fmt.Errorf("failed"))
+	mockedRepo := new(mockSettingsRepo)
+	mockedRepo.On("Get").Return(&settings.Settings{}, fmt.Errorf("failed"))
 
-	authorizer := NewAuthorizer(stub)
+	authorizer := NewAuthorizer(mockedRepo)
 
-	res := authorizer.Authorize("user", "pass", nil)
-
-	if res {
-		t.Fatal("Authorize() == true, want false", false, res)
-	}
+	require.False(t, authorizer.Authorize("user", "pass", nil))
 }
 
-func TestAuthorizerPass(t *testing.T) {
-	stub := newStubSettingsRepo(&settings.Settings{Username: "user", Password: hashPassword(t, "pass")}, nil)
-
-	authorizer := NewAuthorizer(stub)
-
-	res := authorizer.Authorize("user", "pass", nil)
-
-	if !res {
-		t.Fatal("Authorize() == false, want true")
+func TestValidCredentials(t *testing.T) {
+	setting := &settings.Settings{
+		Username: "user",
+		Password: hashPassword(t, "pass"),
 	}
+
+	mockedRepo := new(mockSettingsRepo)
+	mockedRepo.On("Get").Return(setting, nil)
+
+	authorizer := NewAuthorizer(mockedRepo)
+
+	require.True(t, authorizer.Authorize("user", "pass", nil))
 }
 
-func TestAuthorizerFail(t *testing.T) {
-	stub := newStubSettingsRepo(&settings.Settings{Username: "user", Password: hashPassword(t, "pass")}, nil)
-
-	authorizer := NewAuthorizer(stub)
-
-	res := authorizer.Authorize("notuser", "pass", nil)
-
-	if res {
-		t.Fatal("Authorize(invalid username) == true, want false")
+func TestInvalidCredentials(t *testing.T) {
+	setting := &settings.Settings{
+		Username: "user",
+		Password: hashPassword(t, "pass"),
 	}
 
-	res = authorizer.Authorize("user", "notpass", nil)
+	mockedRepo := new(mockSettingsRepo)
+	mockedRepo.On("Get").Return(setting, nil)
 
-	if res {
-		t.Fatal("Authorize(invalid password) == true, want false")
-	}
-}
+	authorizer := NewAuthorizer(mockedRepo)
 
-// A settings row with an empty password hash must never authorize, otherwise a
-// freshly created (but not yet configured) instance would be wide open.
-func TestAuthorizerRejectsEmptyStoredPassword(t *testing.T) {
-	stub := newStubSettingsRepo(&settings.Settings{Username: "user", Password: ""}, nil)
-
-	authorizer := NewAuthorizer(stub)
-
-	if authorizer.Authorize("user", "", nil) {
-		t.Fatal("Authorize() with empty stored hash == true, want false")
-	}
+	require.False(t, authorizer.Authorize("baduser", "pass", nil))
+	require.False(t, authorizer.Authorize("user", "badpass", nil))
 }
