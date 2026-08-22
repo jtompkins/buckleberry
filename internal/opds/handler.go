@@ -1,99 +1,41 @@
 package opds
 
 import (
-	"buckleberry/internal/epub"
+	"buckleberry/internal/adapter"
 	"buckleberry/internal/settings"
-	"bytes"
 	"fmt"
-	"io"
+	"slices"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/Strubbl/wallabago/v9"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
 	"github.com/gorilla/feeds"
-	"github.com/piero-vic/go-linkding"
 )
 
 const ACQ_TYPE string = "application/atom+xml;profile=opds-catalog;kind=acquisition"
 const NAV_TYPE string = "application/atom+xml;profile=opds-catalog;kind=navigation"
+const EPUB_TYPE string = "application/epub+zip"
+const OPDS_ACQ_REL string = "http://opds-spec.org/acquisition"
 
 type settingsReader interface {
 	Get() (*settings.Settings, error)
 }
 
-type wallabagClient interface {
-	GetEntries() (*wallabago.Entries, error)
-	ExportEntry(id int, format string) ([]byte, error)
-	GetEntry(id int) (*wallabago.Item, error)
-}
-
-type linkdingClient interface {
-	GetUnread() ([]linkding.Bookmark, error)
-	GetBookmark(id int) (*linkding.Bookmark, error)
-}
-
-type epubBuilder interface {
-	Build(article *epub.ReadableArticle, writer io.Writer) error
-}
-
-type articleFetcher interface {
-	FetchFromContent(title, author, content string) (*epub.ReadableArticle, error)
-	FetchFromURL(articleURL string) (*epub.ReadableArticle, error)
-}
-
 type Handler struct {
-	settingsRepo   settingsReader
-	wallabagClient wallabagClient
-	linkdingClient linkdingClient
-	fetcher        articleFetcher
-	builder        epubBuilder
-	baseUrl        string
+	settingsRepo settingsReader
+	baseUrl      string
 }
 
-func NewHandler(settingsRepository settingsReader, wallabagClient wallabagClient, linkdingClient linkdingClient, fetcher articleFetcher, builder epubBuilder, baseUrl string) *Handler {
+func NewHandler(settingsRepository settingsReader, baseUrl string) *Handler {
 	return &Handler{
-		settingsRepo:   settingsRepository,
-		wallabagClient: wallabagClient,
-		linkdingClient: linkdingClient,
-		fetcher:        fetcher,
-		builder:        builder,
-		baseUrl:        baseUrl,
+		settingsRepo: settingsRepository,
+		baseUrl:      baseUrl,
 	}
 }
 
-func (h *Handler) requireSource(c fiber.Ctx, enabled func(*settings.Settings) bool) error {
-	currentSettings, err := h.settingsRepo.Get()
-
-	if err != nil {
-		return err
-	}
-
-	if !enabled(currentSettings) {
-		return c.Status(fiber.StatusBadRequest).SendString("source not enabled")
-	}
-
-	fiber.Locals(c, "settings", currentSettings)
-	return c.Next()
-}
-
-func (h *Handler) RequireWallabag(c fiber.Ctx) error {
-	return h.requireSource(c, func(s *settings.Settings) bool { return s.UseWallabag })
-}
-
-func (h *Handler) RequireLinkding(c fiber.Ctx) error {
-	return h.requireSource(c, func(s *settings.Settings) bool { return s.UseLinkding })
-}
-
-func (h *Handler) GetNavigationFeeds(c fiber.Ctx) error {
-	settings, err := h.settingsRepo.Get()
-
-	if err != nil {
-		log.Error("navigation feeds: failed to fetch settings: ", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Failed to generate feed")
-	}
+func (h *Handler) GetTopLevelNavigationFeeds(c fiber.Ctx) error {
+	adapters := c.Locals("adapters").(map[string]adapter.Adapter)
 
 	feedUrl := fmt.Sprintf("%s/opds", h.baseUrl)
 	updated := time.Now()
@@ -106,27 +48,14 @@ func (h *Handler) GetNavigationFeeds(c fiber.Ctx) error {
 		Link:    &feeds.Link{Href: feedUrl, Rel: "self", Type: NAV_TYPE},
 	}
 
-	if settings.UseWallabag {
-		unreadFeedUrl := fmt.Sprintf("%s/opds/wallabag", h.baseUrl)
-
+	for name := range adapters {
+		unreadFeedURL := fmt.Sprintf("%s/opds/%s", h.baseUrl, name)
 		feed.Items = append(feed.Items, &feeds.Item{
-			Title:   "Wallabag",
-			Id:      unreadFeedUrl,
+			Title:   name,
+			Id:      unreadFeedURL,
 			Updated: updated,
-			Link:    &feeds.Link{Href: unreadFeedUrl, Type: ACQ_TYPE},
-			Content: "Unread articles from Wallabag, sorted oldest to newest",
-		})
-	}
-
-	if settings.UseLinkding {
-		unreadFeedUrl := fmt.Sprintf("%s/opds/linkding", h.baseUrl)
-
-		feed.Items = append(feed.Items, &feeds.Item{
-			Title:   "Linkding",
-			Id:      unreadFeedUrl,
-			Updated: updated,
-			Link:    &feeds.Link{Href: unreadFeedUrl, Type: ACQ_TYPE},
-			Content: "Unread articles from Linkding, sorted oldest to newest",
+			Content: fmt.Sprintf("articles from %s", name),
+			Link:    &feeds.Link{Href: unreadFeedURL, Type: NAV_TYPE},
 		})
 	}
 
@@ -142,82 +71,128 @@ func (h *Handler) GetNavigationFeeds(c fiber.Ctx) error {
 	return c.SendString(atomFeed)
 }
 
-func (h *Handler) GetUnreadWallabagFeed(c fiber.Ctx) error {
-	feedUrl := fmt.Sprintf("%s/opds/wallabag", h.baseUrl)
+func (h *Handler) GetNavigationFeedsForAdapter(c fiber.Ctx) error {
+	adapterParam := c.Params("adapter")
+	adapters := c.Locals("adapters").(map[string]adapter.Adapter)
+
+	if _, ok := adapters[adapterParam]; !ok {
+		return c.Status(fiber.StatusBadRequest).SendString("invalid adapter")
+	}
+
+	selectedAdapter := adapters[adapterParam]
+	adapterName := selectedAdapter.Name()
+
+	feedUrl := fmt.Sprintf("%s/opds/%s", h.baseUrl, adapterName)
 
 	feed := &feeds.Feed{
-		Title:   "Unread Wallabag Articles",
+		Title:   fmt.Sprintf("%s articles", adapterName),
+		Id:      feedUrl,
+		Updated: time.Now(),
+		Link:    &feeds.Link{Href: feedUrl, Rel: "self", Type: NAV_TYPE},
+	}
+
+	adapterFeeds, err := selectedAdapter.Feeds()
+
+	if err != nil {
+		log.Error("fetching feed list from adapter %s: %v", adapterName, err)
+		return c.Status(fiber.StatusInternalServerError).SendString(fmt.Sprintf("failed to fetch feed names for %s", adapterName))
+	}
+
+	for _, adapterFeed := range adapterFeeds {
+		adapterFeedUrl := fmt.Sprintf("%s/opds/%s/%s", h.baseUrl, adapterName, adapterFeed)
+
+		feed.Items = append(feed.Items, &feeds.Item{
+			Id:      adapterFeedUrl,
+			Title:   adapterFeed,
+			Content: fmt.Sprintf("%s articles from %s", adapterFeed, adapterName),
+			Updated: time.Now(),
+			Link:    &feeds.Link{Href: adapterFeedUrl, Type: ACQ_TYPE},
+		})
+	}
+
+	c.Type("atom", "utf-8")
+
+	atomFeed, err := feed.ToAtom()
+
+	if err != nil {
+		log.Error("generating navigation feeds for adapter %s: %v", adapterName, err)
+		return c.Status(fiber.StatusInternalServerError).SendString(fmt.Sprintf("failed to generate navigation feeds for %s", adapterName))
+	}
+
+	return c.SendString(atomFeed)
+}
+
+func (h *Handler) GetAcquisitionFeedForAdapter(c fiber.Ctx) error {
+	adapterParam := c.Params("adapter")
+	feedParam := c.Params("feed")
+	adapters := c.Locals("adapters").(map[string]adapter.Adapter)
+
+	if _, ok := adapters[adapterParam]; !ok {
+		return c.Status(fiber.StatusBadRequest).SendString("invalid adapter")
+	}
+
+	selectedAdapter := adapters[adapterParam]
+	adapterName := selectedAdapter.Name()
+	adapterFeeds, err := selectedAdapter.Feeds()
+
+	if err != nil {
+		log.Error("fetching feed list from adapter %s: %v", adapterName, err)
+		return c.Status(fiber.StatusInternalServerError).SendString(fmt.Sprintf("failed to fetch feed names for %s", adapterName))
+	}
+
+	if !slices.Contains(adapterFeeds, feedParam) {
+		return c.Status(fiber.StatusBadRequest).SendString(fmt.Sprintf("invalid feed %s for %s", feedParam, adapterName))
+	}
+
+	feedUrl := fmt.Sprintf("%s/opds/%s/%s", h.baseUrl, adapterName, feedParam)
+
+	feed := &feeds.Feed{
+		Title:   fmt.Sprintf("%s %s Articles", feedParam, adapterName),
 		Id:      feedUrl,
 		Updated: time.Now(),
 		Link:    &feeds.Link{Href: feedUrl, Rel: "self", Type: ACQ_TYPE},
 	}
 
-	entries, err := h.wallabagClient.GetEntries()
+	articles, err := selectedAdapter.Articles(feedParam)
 
 	if err != nil {
-		log.Error("fetch Wallabag entries: ", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Failed to fetch Wallabag articles")
+		log.Error("failed to fetch articles for %s from adapter %s: %v", feedParam, adapterName, err)
+		return c.Status(fiber.StatusInternalServerError).SendString(fmt.Sprintf("failed to fetch %s articles from %s", feedParam, adapterName))
 	}
 
-	var feedItems []*feeds.Item
+	for _, article := range articles {
+		articleUrl := fmt.Sprintf("%s/opds/%s/%s/%d", h.baseUrl, adapterName, feedParam, article.ID)
 
-	for _, entry := range entries.Embedded.Items {
-		var author string
-		authorCount := len(entry.PublishedBy)
-
-		if authorCount == 0 {
-			author = entry.DomainName
-		} else {
-			var authorBuilder strings.Builder
-
-			for i, author := range entry.PublishedBy {
-				if i == authorCount-1 {
-					authorBuilder.WriteString(author)
-				} else {
-					fmt.Fprintf(&authorBuilder, "%s, ", author)
-				}
-			}
-
-			author = authorBuilder.String()
-		}
-
-		entryUrl := fmt.Sprintf("%s/opds/wallabag/%d", h.baseUrl, entry.ID)
-
-		var entryUpdated time.Time
-
-		if entry.UpdatedAt != nil {
-			entryUpdated = entry.UpdatedAt.Time
-		} else if entry.CreatedAt != nil {
-			entryUpdated = entry.CreatedAt.Time
-		} else {
-			entryUpdated = time.Now()
-		}
-
-		feedItems = append(feedItems, &feeds.Item{
-			Id:      entryUrl,
-			Title:   entry.Title,
-			Link:    &feeds.Link{Href: entryUrl, Type: "application/epub+zip", Rel: "http://opds-spec.org/acquisition"},
-			Author:  &feeds.Author{Name: author},
-			Updated: entryUpdated,
+		feed.Items = append(feed.Items, &feeds.Item{
+			Id:      articleUrl,
+			Title:   article.Title,
+			Author:  &feeds.Author{Name: article.Author},
+			Updated: time.Now(),
+			Link:    &feeds.Link{Href: articleUrl, Type: EPUB_TYPE, Rel: OPDS_ACQ_REL},
 		})
-	}
-
-	feed.Items = feedItems
-
-	atomFeed, err := feed.ToAtom()
-
-	if err != nil {
-		log.Error("generate unread feed: ", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Failed to generate feed")
 	}
 
 	c.Type("atom", "utf-8")
 
+	atomFeed, err := feed.ToAtom()
+
+	if err != nil {
+		log.Error("generating acquisition feed %s for adapter %s: %v", feedParam, adapterName, err)
+		return c.Status(fiber.StatusInternalServerError).SendString(fmt.Sprintf("failed to generate acquisition feed %s for %s", feedParam, adapterName))
+	}
+
 	return c.SendString(atomFeed)
 }
 
-func (h *Handler) GetWallabagDownload(c fiber.Ctx) error {
-	settings := fiber.Locals[*settings.Settings](c, "settings")
+func (h *Handler) DownloadArticle(c fiber.Ctx) error {
+	adapterParam := c.Params("adapter")
+	adapters := c.Locals("adapters").(map[string]adapter.Adapter)
+
+	if _, ok := adapters[adapterParam]; !ok {
+		return c.Status(fiber.StatusBadRequest).SendString(fmt.Sprintf("invalid adapter: %s", adapterParam))
+	}
+
+	selectedAdapter := adapters[adapterParam]
 
 	idParam := c.Params("id")
 
@@ -231,129 +206,12 @@ func (h *Handler) GetWallabagDownload(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).SendString("Invalid article ID")
 	}
 
-	log.Debug("Attempting to fetch ePUB for article with ID ", articleId)
-
-	if settings.UseInternalEpubBuilder {
-		entry, err := h.wallabagClient.GetEntry(articleId)
-
-		if err != nil {
-			log.Errorf("Failed to fetch article: %w", err)
-			return c.Status(fiber.StatusInternalServerError).SendString("Couldn't fetch wallabag article")
-		}
-
-		author := strings.Join(entry.PublishedBy, ", ")
-
-		article, err := h.fetcher.FetchFromContent(entry.Title, author, entry.Content)
-
-		if err != nil {
-			log.Errorf("Failed to create readable article: %w", err)
-			return c.Status(fiber.StatusInternalServerError).SendString("Couldn't fetch wallabag article")
-		}
-
-		buffer := bytes.NewBuffer([]byte{})
-
-		err = h.builder.Build(article, buffer)
-
-		if err != nil {
-			log.Errorf("Failed to create EPUB: %w", err)
-			return c.Status(fiber.StatusInternalServerError).SendString("Couldn't write wallabag epub bytes")
-		}
-
-		return c.Type("epub").Send(buffer.Bytes())
-	} else {
-		epubBytes, err := h.wallabagClient.ExportEntry(articleId, "epub")
-
-		if err != nil {
-			log.Errorf("export article %d as ePUB: %v", articleId, err)
-			return c.Status(fiber.StatusInternalServerError).SendString("Failed to download wallabag article")
-		}
-
-		return c.Type("epub").Send(epubBytes)
-	}
-}
-
-func (h *Handler) GetUnreadLinkdingFeed(c fiber.Ctx) error {
-	feedUrl := fmt.Sprintf("%s/opds/linkding", h.baseUrl)
-
-	feed := &feeds.Feed{
-		Title:   "Unread Linkding Articles",
-		Id:      feedUrl,
-		Updated: time.Now(),
-		Link:    &feeds.Link{Href: feedUrl, Rel: "self", Type: ACQ_TYPE},
-	}
-
-	bookmarks, err := h.linkdingClient.GetUnread()
+	epubBytes, err := selectedAdapter.Download(articleId)
 
 	if err != nil {
-		log.Error("fetch Linkding entries: ", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Failed to fetch Linkding articles")
+		log.Errorf("export %s article %d as ePUB: %v", adapterParam, articleId, err)
+		return c.Status(fiber.StatusInternalServerError).SendString(fmt.Sprintf("Failed to download %s article %d", adapterParam, articleId))
 	}
 
-	var feedItems []*feeds.Item
-
-	for _, bookmark := range bookmarks {
-		entryUrl := fmt.Sprintf("%s/opds/linkding/%d", h.baseUrl, bookmark.ID)
-
-		feedItems = append(feedItems, &feeds.Item{
-			Id:      entryUrl,
-			Title:   bookmark.Title,
-			Link:    &feeds.Link{Href: entryUrl, Type: "application/epub+zip", Rel: "http://opds-spec.org/acquisition"},
-			Author:  &feeds.Author{Name: bookmark.WebsiteTitle},
-			Updated: bookmark.DateAdded,
-		})
-	}
-
-	feed.Items = feedItems
-
-	atomFeed, err := feed.ToAtom()
-
-	if err != nil {
-		log.Error("generate linkding unread feed: ", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Failed to generate linkding unread feed")
-	}
-
-	c.Type("atom", "utf-8")
-
-	return c.SendString(atomFeed)
-}
-
-func (h *Handler) GetLinkdingDownload(c fiber.Ctx) error {
-	idParam := c.Params("id")
-
-	if idParam == "" {
-		return c.Status(fiber.StatusBadRequest).SendString("Missing article ID")
-	}
-
-	articleId, err := strconv.Atoi(idParam)
-
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString("Invalid article ID")
-	}
-
-	log.Debug("Attempting to fetch ePUB for article with ID ", articleId)
-
-	bookmark, err := h.linkdingClient.GetBookmark(articleId)
-
-	if err != nil {
-		log.Errorf("Failed to fetch linkding article: %w", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Couldn't fetch linkding article")
-	}
-
-	article, err := h.fetcher.FetchFromURL(bookmark.URL)
-
-	if err != nil {
-		log.Errorf("Failed to create readable article: %w", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Couldn't fetch linkding article")
-	}
-
-	buffer := bytes.NewBuffer([]byte{})
-
-	err = h.builder.Build(article, buffer)
-
-	if err != nil {
-		log.Errorf("Failed to create EPUB: %w", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Couldn't write linkding epub bytes")
-	}
-
-	return c.Type("epub").Send(buffer.Bytes())
+	return c.Type("epub").Send(epubBytes)
 }
