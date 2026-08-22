@@ -1,0 +1,40 @@
+package home
+
+import (
+	"buckleberry/internal/settings"
+	"buckleberry/internal/shared"
+	"github.com/gofiber/fiber/v3"
+)
+
+templ HomeView(settings *settings.Settings, messages []fiber.FlashMessage, connectedAdapters map[string]bool) {
+	@shared.Layout("Settings") {
+		<h1>Buckleberry Settings</h1>
+		if len(messages) > 0 {
+			<ul>
+				for _, msg := range(messages) {
+					<li>{ msg.Value }</li>
+				}
+			</ul>
+		}
+		<h2>Status</h2>
+		<ul>
+			for adapter, connected := range connectedAdapters {
+				<li>
+					<strong>{adapter}</strong>
+					
+					if connected {
+						<span style="color: green">✅</span>
+					} else {
+						<span style="color: red">❌</span>
+					}
+				</li>
+			}
+		</ul>
+		<form method="POST" action="/settings">
+			<h2>Configuration</h2>
+			@shared.WallabagSettingsPartial(&settings.WallabagSettings)
+			@shared.LinkdingSettingsPartial(&settings.LinkdingSettings)
+			<input type="submit" value="Update settings"/>
+		</form>
+	}
+}
